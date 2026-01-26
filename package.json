@@ -5,12 +5,18 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js",
-    "test": "jest",
-    "test:watch": "jest --watch",
+    "dev": "USE_MOCKS=true nodemon src/index.js",
+    "test": "jest --setupFilesAfterEnv ./tests/setup.js",
+    "test:watch": "jest --watch --setupFilesAfterEnv ./tests/setup.js",
+    "test:unit": "jest tests/unit --setupFilesAfterEnv ./tests/setup.js",
+    "test:integration": "jest tests/integration --setupFilesAfterEnv ./tests/setup.js",
+    "test:coverage": "jest --coverage --setupFilesAfterEnv ./tests/setup.js",
     "test:mock": "node scripts/test-mock-flow.js",
     "lint": "eslint src/",
-    "validate": "node scripts/validate-env.js"
+    "validate": "node scripts/validate-env.js",
+    "docker:build": "docker build -t receptionist-agent .",
+    "docker:run": "docker-compose up",
+    "docker:dev": "docker-compose --profile dev up app-dev"
   },
   "keywords": [
     "ai-receptionist",
@@ -42,6 +48,25 @@
   "devDependencies": {
     "nodemon": "^3.0.3",
     "jest": "^29.7.0",
+    "supertest": "^6.3.4",
     "eslint": "^8.56.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": [
+      "**/tests/**/*.test.js"
+    ],
+    "collectCoverageFrom": [
+      "src/**/*.js",
+      "!src/index.js"
+    ],
+    "coverageThreshold": {
+      "global": {
+        "branches": 50,
+        "functions": 50,
+        "lines": 50,
+        "statements": 50
+      }
+    }
   }
 }

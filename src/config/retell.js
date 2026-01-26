@@ -173,12 +173,14 @@ function detectEmergency(callData) {
     combinedText.includes(keyword)
   );
 
-  const isEmergency = detectedKeywords.length > 0;
-
   // Check specifically for mental health crisis
   const mentalHealthCrisis = [
-    'suicide', 'kill myself', 'self-harm', 'hurt myself', 'end my life'
+    'suicide', 'kill myself', 'self-harm', 'hurt myself', 'end my life',
+    'thinking about hurting', 'want to hurt', 'thinking of hurting',
+    'thinking about hurting myself', 'want to hurt myself', 'thinking of hurting myself'
   ].some(keyword => combinedText.includes(keyword));
+
+  const isEmergency = detectedKeywords.length > 0 || mentalHealthCrisis;
 
   return {
     isEmergency,

@@ -17,6 +17,7 @@ const logger = require('../config/logger');
 
 const KERAGON_WEBHOOK_URL = process.env.KERAGON_WEBHOOK_URL;
 const KERAGON_API_KEY = process.env.KERAGON_API_KEY;
+const USE_MOCKS = process.env.USE_MOCKS === 'true' || process.env.NODE_ENV === 'test';
 
 // Create axios instance for Keragon API calls
 const keragonClient = axios.create({
@@ -33,6 +34,12 @@ const keragonClient = axios.create({
  * @returns {Promise<Object>} Keragon response
  */
 async function logToKeragon(data) {
+  // Use mock in test/development mode
+  if (USE_MOCKS) {
+    const keragonMock = require('../../mocks/keragon.mock');
+    return keragonMock.mockLogToKeragon(data);
+  }
+
   if (!KERAGON_WEBHOOK_URL) {
     logger.warn('KERAGON_WEBHOOK_URL not configured - skipping log');
     return { success: false, reason: 'Keragon not configured' };

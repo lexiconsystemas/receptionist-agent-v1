@@ -266,4 +266,6 @@ process.on('SIGINT', () => {
   });
 });
 
+// Export app and server for testing
+app.server = server;
 module.exports = app;

@@ -11,8 +11,27 @@ const request = require('supertest');
 process.env.USE_MOCKS = 'true';
 process.env.NODE_ENV = 'test';
 
+// Import app (this starts the server)
 const app = require('../../src/index');
 const mocks = require('../../mocks');
+
+// Get reference to server for cleanup
+let server;
+
+beforeAll(() => {
+  // The server is already started by index.js, get its reference
+  // We need to close it after tests
+  server = app.server;
+});
+
+afterAll((done) => {
+  // Close the server to allow Jest to exit
+  if (app.server) {
+    app.server.close(done);
+  } else {
+    done();
+  }
+});
 
 describe('Call Flow Integration Tests', () => {
   beforeEach(() => {
@@ -77,9 +96,9 @@ describe('Call Flow Integration Tests', () => {
 
       expect(response.body.success).toBe(true);
 
-      // Verify emergency was logged
+      // Verify emergency was logged (emergency calls have emergency_trigger: true)
       const keragonStats = mocks.keragon.getMockStats();
-      expect(keragonStats.total_emergencies).toBeGreaterThan(0);
+      expect(keragonStats.emergency_calls).toBeGreaterThan(0);
     });
 
     it('should detect and flag spam call', async () => {
