@@ -1,0 +1,96 @@
+version: '3.8'
+
+services:
+  # ===========================================
+  # Main Application
+  # ===========================================
+  app:
+    build:
+      context: .
+      target: production
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - REDIS_URL=redis://redis:6379
+      # Pass through from .env file
+      - TWILIO_ACCOUNT_SID
+      - TWILIO_AUTH_TOKEN
+      - TWILIO_PHONE_NUMBER
+      - RETELL_API_KEY
+      - RETELL_AGENT_ID
+      - RETELL_WEBHOOK_SECRET
+      - HATHR_API_KEY
+      - HATHR_API_URL
+      - HATHR_MODEL_ID
+      - KERAGON_API_KEY
+      - KERAGON_WEBHOOK_URL
+      - KERAGON_WORKSPACE_ID
+      - CLINIC_NAME
+      - CLINIC_ADDRESS
+      - CLINIC_PHONE
+      - SMS_ENABLED
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - receptionist-network
+
+  # ===========================================
+  # Redis for Session/Cache
+  # ===========================================
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - receptionist-network
+
+  # ===========================================
+  # Development Mode
+  # ===========================================
+  app-dev:
+    build:
+      context: .
+      target: development
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=development
+      - USE_MOCKS=true
+      - PORT=3000
+      - LOG_LEVEL=debug
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - ./logs:/app/logs
+    profiles:
+      - dev
+    networks:
+      - receptionist-network
+
+networks:
+  receptionist-network:
+    driver: bridge
+
+volumes:
+  redis-data:
