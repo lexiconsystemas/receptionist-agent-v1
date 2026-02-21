@@ -163,7 +163,7 @@ const retryWrappers = {
     initialDelayMs: 500 // Lower latency requirement
   }),
 
-  twilio: createRetryWrapper('Twilio', {
+  signalwire: createRetryWrapper('SignalWire', {
     maxRetries: 3,
     initialDelayMs: 1000
   }),

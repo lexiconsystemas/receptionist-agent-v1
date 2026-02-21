@@ -12,7 +12,7 @@ The Receptionist Agent V1 is built with a modular, scalable architecture that in
 
 - **Voice Processing**: RetellAI for natural speech recognition and synthesis
 - **AI Intelligence**: Hathr.ai healthcare-focused LLM for conversation management
-- **Telephony**: Twilio for inbound/outbound calls and SMS messaging
+- **Telephony**: SignalWire for inbound/outbound calls and SMS messaging
 - **Automation**: Keragon for healthcare workflow orchestration
 - **Backend**: Node.js/Express with enterprise-grade security and scalability
 - **Caching**: Redis for session management and performance optimization
@@ -24,7 +24,7 @@ The Receptionist Agent V1 is built with a modular, scalable architecture that in
 | **Frontend** | Voice Interface | Patient interaction |
 | **Voice AI** | RetellAI | Speech processing |
 | **LLM** | Hathr.ai | Conversation logic |
-| **Telephony** | Twilio | Calls & SMS |
+| **Telephony** | SignalWire | Calls & SMS |
 | **Automation** | Keragon | Workflows |
 | **Backend** | Node.js/Express | API & Logic |
 | **Cache** | Redis | Sessions |
@@ -107,7 +107,7 @@ Strategic plan for API integration and testing when external services become ava
 - **Node.js**: 18.0+ 
 - **Docker**: 20.10+ (for containerized deployment)
 - **Redis**: 7.0+ (included in Docker Compose)
-- **API Credentials**: RetellAI, Twilio, Keragon, Hathr.ai
+- **API Credentials**: RetellAI, SignalWire, Keragon, Hathr.ai
 
 ### Installation
 
@@ -159,8 +159,10 @@ PORT=3000
 MOCK_MODE=false
 
 # API Credentials
-TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-TWILIO_AUTH_TOKEN=your_auth_token
+SIGNALWIRE_PROJECT_ID=your_signalwire_project_id
+SIGNALWIRE_API_TOKEN=your_api_token
+SIGNALWIRE_SPACE_URL=yourspace.signalwire.com
+SIGNALWIRE_PHONE_NUMBER=+1xxxxxxxxxx
 RETELL_API_KEY=your_retell_api_key
 KERAGON_API_KEY=your_keragon_api_key
 HATHR_API_KEY=your_hathr_api_key
@@ -264,10 +266,10 @@ Events: call.started, call.ended, call.analyzed
 Secret: RETELL_WEBHOOK_SECRET
 ```
 
-#### Twilio
+#### SignalWire
 ```
-Voice URL: https://api.yourclinic.com/webhook/twilio/voice
-SMS URL: https://api.yourclinic.com/webhook/twilio/sms-status
+Voice URL: https://api.yourclinic.com/webhook/signalwire/voice
+SMS URL: https://api.yourclinic.com/webhook/signalwire/sms-status
 ```
 
 #### Keragon

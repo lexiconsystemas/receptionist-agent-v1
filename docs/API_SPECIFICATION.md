@@ -36,7 +36,7 @@ Incoming webhooks are authenticated using HMAC-SHA256 signatures:
 ```
 X-Retell-Signature: sha256=SIGNATURE
 X-Keragon-Signature: sha256=SIGNATURE
-X-Twilio-Signature: SIGNATURE
+X-SignalWire-Signature: SIGNATURE
 ```
 
 ---
@@ -188,12 +188,12 @@ Handles call status updates from RetellAI.
 }
 ```
 
-### POST /webhook/twilio/voice
+### POST /webhook/signalwire/voice
 
-Processes incoming Twilio voice calls and routes to RetellAI.
+Processes incoming SignalWire voice calls and routes to RetellAI.
 
 **Authentication**
-- Required: `X-Twilio-Signature` header
+- Required: `X-SignalWire-Signature` header
 
 **Request Body** (Form data)
 ```
@@ -203,7 +203,7 @@ CallSid: CA1234567890abcdef
 Direction: inbound
 ```
 
-**Response** (TwiML)
+**Response** (LaML/TwiML compatible)
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -213,9 +213,9 @@ Direction: inbound
 </Response>
 ```
 
-### POST /webhook/twilio/sms-status
+### POST /webhook/signalwire/sms-status
 
-Handles SMS delivery status updates from Twilio.
+Handles SMS delivery status updates from SignalWire.
 
 **Request Body**
 ```json
@@ -430,17 +430,17 @@ X-RateLimit-Reset: 1643145600
    - `call.analyzed`
    - `call.transcript_update`
 
-#### Twilio Webhook Configuration
+#### SignalWire Webhook Configuration
 
 1. **Voice Webhook**
    ```
-   URL: https://api.yourclinic.com/webhook/twilio/voice
+   URL: https://api.yourclinic.com/webhook/signalwire/voice
    Method: POST
    ```
 
 2. **SMS Status Callback**
    ```
-   URL: https://api.yourclinic.com/webhook/twilio/sms-status
+   URL: https://api.yourclinic.com/webhook/signalwire/sms-status
    Method: POST
    ```
 

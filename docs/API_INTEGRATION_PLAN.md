@@ -31,13 +31,13 @@ The project is currently blocked waiting for API credentials from the client:
 - Hathr.ai mock with conversation flow
 - End-to-end testing framework
 
-### 🔄 PARTIALLY FUNCTIONAL (Twilio Only)
+### 🔄 PARTIALLY FUNCTIONAL (SignalWire Only)
 
-**Twilio Integration**
-- TwiML generation for call routing
+**SignalWire Integration**
+- LaML generation for call routing
 - SMS sending capability
 - Webhook handlers implemented
-- **BLOCKER**: Requires Twilio credentials for testing
+- **BLOCKER**: Requires SignalWire credentials for testing
 
 ### ❌ COMPLETELY BLOCKED (Requires API Credentials)
 
@@ -104,7 +104,7 @@ npm test
 - [ ] Agent configured with voice settings
 - [ ] Webhook endpoint configured
 - [ ] LLM integration (Hathr.ai) set up
-- [ ] Phone number integration with Twilio
+- [ ] Phone number integration with SignalWire
 
 ### Keragon Setup (Client Responsibility)
 - [ ] Keragon workspace created
@@ -122,11 +122,11 @@ npm test
 - [ ] Emergency detection rules
 - [ ] Integration with RetellAI
 
-### Twilio Setup (Can Be Done Now)
-- [ ] Twilio account created
+### SignalWire Setup (Can Be Done Now)
+- [ ] SignalWire account created and space provisioned
 - [ ] Phone number acquired
-- [ ] API credentials provided
-- [ ] Voice webhook configured
+- [ ] Project ID, API Token, and Space URL provided
+- [ ] Voice webhook configured to /webhook/signalwire/voice
 - [ ] SMS capabilities enabled
 
 ## Deployment Timeline Impact
@@ -164,11 +164,11 @@ npm test
 ### For Client (Critical Path)
 1. **Provide API Credentials** for RetellAI, Keragon, and Hathr.ai
 2. **Configure Webhooks** to point to deployment server
-3. **Set Up Phone Numbers** in Twilio and RetellAI
+3. **Set Up Phone Numbers** in SignalWire and RetellAI
 4. **Design Keragon Workflows** for call logging and notifications
 
 ### For Development Team (Can Start Now)
-1. **Set Up Twilio** (can be done independently)
+1. **Set Up SignalWire** (can be done independently)
 2. **Create Test Scenarios** for when APIs are available
 3. **Prepare Deployment Environment** (staging server)
 4. **Design Monitoring Strategy** for production

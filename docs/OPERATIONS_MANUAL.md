@@ -20,7 +20,7 @@ The Receptionist Agent V1 is an enterprise-grade AI-powered after-hours receptio
 - **Application Layer**: Node.js/Express server with business logic
 - **Voice Processing**: RetellAI integration for speech recognition and synthesis
 - **AI Intelligence**: Hathr.ai healthcare-focused LLM for conversation management
-- **Telephony**: Twilio for inbound/outbound calls and SMS
+- **Telephony**: SignalWire for inbound/outbound calls and SMS
 - **Automation**: Keragon for healthcare workflow orchestration
 - **Caching**: Redis for session management and scalability
 - **Monitoring**: Comprehensive health checks and logging
@@ -30,7 +30,7 @@ The Receptionist Agent V1 is an enterprise-grade AI-powered after-hours receptio
 | Service | Criticality | SLA | Fallback |
 |---------|-------------|-----|----------|
 | **RetellAI** | Critical | 99.9% | Mock mode |
-| **Twilio** | Critical | 99.9% | Error handling |
+| **SignalWire** | Critical | 99.9% | Error handling |
 | **Keragon** | High | 99.5% | Local logging |
 | **Hathr.ai** | Critical | 99.9% | Basic responses |
 | **Redis** | High | 99.5% | In-memory fallback |
@@ -53,7 +53,7 @@ To ensure proper system initialization and service availability.
 1. **Pre-Startup Checks**
    ```bash
    # Verify environment configuration
-   cat .env | grep -E "(TWILIO|RETELL|KERAGON|HATHR)"
+   cat .env | grep -E "(SIGNALWIRE|RETELL|KERAGON|HATHR)"
    
    # Check Redis connectivity
    redis-cli -h localhost -p 6379 ping

@@ -40,7 +40,7 @@ This document provides comprehensive deployment instructions for the Receptionis
 | Service | Required | Purpose |
 |---------|----------|---------|
 | **RetellAI** | ✅ Required | Voice processing & AI conversation |
-| **Twilio** | ✅ Required | Telephony & SMS services |
+| **SignalWire** | ✅ Required | Telephony & SMS services |
 | **Keragon** | ✅ Required | Healthcare workflow automation |
 | **Hathr.ai** | ✅ Required | Healthcare-focused LLM |
 | **Google Calendar** | Optional | Clinic hours reference |
@@ -73,10 +73,11 @@ MOCK_MODE=false
 
 #### API Credentials
 ```env
-# Twilio Configuration
-TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-TWILIO_AUTH_TOKEN=your_auth_token_here
-TWILIO_PHONE_NUMBER=+1xxxxxxxxxx
+# SignalWire Configuration
+SIGNALWIRE_PROJECT_ID=your_signalwire_project_id
+SIGNALWIRE_API_TOKEN=your_api_token_here
+SIGNALWIRE_SPACE_URL=yourspace.signalwire.com
+SIGNALWIRE_PHONE_NUMBER=+1xxxxxxxxxx
 
 # RetellAI Configuration
 RETELL_API_KEY=your_retell_api_key
@@ -208,8 +209,9 @@ metadata:
   namespace: receptionist-agent
 type: Opaque
 data:
-  TWILIO_ACCOUNT_SID: QUN4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHg=  # Base64 encoded
-  TWILIO_AUTH_TOKEN: eW91cl9hdXRoX3Rva2VuX2hlcmU=
+  SIGNALWIRE_PROJECT_ID: eW91cl9wcm9qZWN0X2lk  # Base64 encoded
+  SIGNALWIRE_API_TOKEN: eW91cl9hcGlfdG9rZW4=
+  SIGNALWIRE_SPACE_URL: eW91cnNwYWNlLnNpZ25hbHdpcmUuY29t
   RETELL_API_KEY: eW91cl9yZXRlbGxfYXBpX2tleQ==
 ```
 
@@ -512,7 +514,7 @@ server {
 ```env
 # Webhook signature secrets
 RETELL_WEBHOOK_SECRET=your_retell_webhook_secret
-TWILIO_AUTH_TOKEN=your_twilio_auth_token
+SIGNALWIRE_API_TOKEN=your_signalwire_api_token
 WEBHOOK_SIGNATURE_SECRET=your_webhook_signature_secret
 ```
 

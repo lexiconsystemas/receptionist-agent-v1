@@ -268,7 +268,7 @@ const circuitBreakers = {
     timeout: 15000 // Shorter timeout for voice service
   }),
 
-  twilio: registry.get('twilio', {
+  signalwire: registry.get('signalwire', {
     failureThreshold: 5,
     timeout: 30000
   }),

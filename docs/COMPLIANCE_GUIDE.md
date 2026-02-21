@@ -419,7 +419,7 @@ alerts:
 | Vendor | Service | BAA Status | Last Review |
 |--------|---------|------------|-------------|
 | **RetellAI** | Voice Processing | In Progress | 2026-01-25 |
-| **Twilio** | Telephony | Signed | 2026-01-15 |
+| **SignalWire** | Telephony | Signed | 2026-01-15 |
 | **Keragon** | Workflow Automation | In Progress | 2026-01-25 |
 | **Hathr.ai** | AI Processing | In Progress | 2026-01-25 |
 | **AWS** | Cloud Infrastructure | Signed | 2026-01-01 |

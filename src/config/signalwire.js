@@ -12,11 +12,14 @@
  *   SIGNALWIRE_PHONE_NUMBER — Provisioned SignalWire phone number in E.164 format
  */
 
-// Use the non-bundled index.js entry so that .twiml namespace lazy-getters are accessible.
-// The dist bundle's named exports don't expose the twiml namespace directly.
-// We require via relative path because the package `exports` map doesn't expose an index.js subpath.
-const SignalWire = require('../../node_modules/@signalwire/compatibility-api/index.js');
-const { RestClient } = SignalWire;
+// The @signalwire/compatibility-api package has two entry points with complementary exports:
+//   - dist bundle (main): exports a working RestClient but does NOT expose .twiml namespace
+//   - lib/index.js:        exports .twiml.VoiceResponse and validateRequest, but its RestClient is
+//                          the obsolete Twilio-origin stub that throws on construction.
+// We therefore split the imports: RestClient from dist, twiml/validateRequest from lib.
+const { RestClient } = require('@signalwire/compatibility-api');
+// Relative path required because the package `exports` map has no subpath export for index.js.
+const _swLib = require('../../node_modules/@signalwire/compatibility-api/index.js');
 const logger = require('./logger');
 
 // SignalWire credentials
@@ -41,7 +44,7 @@ if (projectId && apiToken && spaceUrl) {
  * @returns {string} LaML/TwiML response string
  */
 function generateRetellTwiml(callData) {
-  const VoiceResponse = SignalWire.twiml.VoiceResponse;
+  const VoiceResponse = _swLib.twiml.VoiceResponse;
   const response = new VoiceResponse();
 
   const retellAgentId = process.env.RETELL_AGENT_ID;
@@ -131,7 +134,7 @@ function validateWebhookSignature(signature, url, params) {
     return false;
   }
 
-  return SignalWire.validateRequest(apiToken, signature, url, params);
+  return _swLib.validateRequest(apiToken, signature, url, params);
 }
 
 /**
