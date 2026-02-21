@@ -13,7 +13,7 @@
 const retellMock = require('./retell.mock');
 const keragonMock = require('./keragon.mock');
 const hathrMock = require('./hathr.mock');
-const twilioMock = require('./twilio.mock');
+const signalwireMock = require('./signalwire.mock');
 
 const MOCK_ENABLED = process.env.USE_MOCKS === 'true' || process.env.NODE_ENV === 'development';
 
@@ -44,9 +44,13 @@ function getMockStatus() {
         mocked: MOCK_ENABLED,
         real_credentials_configured: !!process.env.HATHR_API_KEY
       },
-      twilio: {
+      signalwire: {
         mocked: MOCK_ENABLED,
-        real_credentials_configured: !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN)
+        real_credentials_configured: !!(
+          process.env.SIGNALWIRE_PROJECT_ID &&
+          process.env.SIGNALWIRE_API_TOKEN &&
+          process.env.SIGNALWIRE_SPACE_URL
+        )
       }
     }
   };
@@ -57,7 +61,7 @@ function getMockStatus() {
  */
 function clearAllMockStores() {
   keragonMock.clearMockStore();
-  twilioMock.clearMockStores();
+  signalwireMock.clearMockStores();
   console.log('[MOCKS] All mock stores cleared');
 }
 
@@ -67,9 +71,9 @@ function clearAllMockStores() {
 function getAllMockStats() {
   return {
     keragon: keragonMock.getMockStats(),
-    twilio: {
-      sms_count: twilioMock.getMockSmsMessages().length,
-      call_count: twilioMock.getMockCalls().length
+    signalwire: {
+      sms_count: signalwireMock.getMockSmsMessages().length,
+      call_count: signalwireMock.getMockCalls().length
     }
   };
 }
@@ -91,6 +95,6 @@ module.exports = {
   // Hathr.ai mocks
   hathr: hathrMock,
 
-  // Twilio mocks
-  twilio: twilioMock
+  // SignalWire mocks
+  signalwire: signalwireMock
 };

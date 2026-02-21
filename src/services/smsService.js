@@ -9,7 +9,7 @@
  * - Tracks delivery status in Keragon
  */
 
-const twilioConfig = require('../config/twilio');
+const signalwireConfig = require('../config/signalwire');
 const callLogger = require('./callLogger');
 const logger = require('../config/logger');
 
@@ -38,7 +38,7 @@ async function sendFollowUp(callData) {
       await delay(SMS_DELAY_MS);
     }
 
-    const result = await twilioConfig.sendSms(phoneNumber, message);
+    const result = await signalwireConfig.sendSms(phoneNumber, message);
 
     logger.info('Follow-up SMS sent', {
       callId: callData.call_id,
@@ -132,7 +132,7 @@ async function sendEmergencyResources(phoneNumber, emergencyInfo) {
   }
 
   try {
-    const result = await twilioConfig.sendSms(phoneNumber, message);
+    const result = await signalwireConfig.sendSms(phoneNumber, message);
 
     logger.info('Emergency resources SMS sent', {
       to: phoneNumber,
@@ -162,7 +162,7 @@ async function sendHoursReminder(phoneNumber) {
   const message = `${clinicName} hours: ${formatClinicHours(clinicHours)}. Walk-ins always welcome!`;
 
   try {
-    const result = await twilioConfig.sendSms(phoneNumber, message);
+    const result = await signalwireConfig.sendSms(phoneNumber, message);
     return { success: true, messageSid: result.messageSid };
   } catch (error) {
     logger.error('Failed to send hours reminder', { error: error.message });

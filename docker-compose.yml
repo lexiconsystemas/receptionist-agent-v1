@@ -15,9 +15,10 @@ services:
       - PORT=3000
       - REDIS_URL=redis://redis:6379
       # Pass through from .env file
-      - TWILIO_ACCOUNT_SID
-      - TWILIO_AUTH_TOKEN
-      - TWILIO_PHONE_NUMBER
+      - SIGNALWIRE_PROJECT_ID
+      - SIGNALWIRE_API_TOKEN
+      - SIGNALWIRE_SPACE_URL
+      - SIGNALWIRE_PHONE_NUMBER
       - RETELL_API_KEY
       - RETELL_AGENT_ID
       - RETELL_WEBHOOK_SECRET

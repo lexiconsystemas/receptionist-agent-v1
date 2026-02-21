@@ -40,14 +40,14 @@ describe('Call Flow Integration Tests', () => {
   });
 
   describe('Incoming Call Webhook', () => {
-    it('should accept incoming Twilio call and return TwiML', async () => {
-      const callPayload = mocks.twilio.generateMockIncomingCallPayload({
+    it('should accept incoming SignalWire call and return LaML', async () => {
+      const callPayload = mocks.signalwire.generateMockIncomingCallPayload({
         from: '+15551234567',
         to: '+15559999999'
       });
 
       const response = await request(app)
-        .post('/webhook/twilio/voice')
+        .post('/webhook/signalwire/voice')
         .send(callPayload)
         .expect('Content-Type', /xml/)
         .expect(200);
@@ -141,11 +141,11 @@ describe('Call Flow Integration Tests', () => {
 
   describe('SMS Status Callback', () => {
     it('should handle SMS delivery status update', async () => {
-      const messageSid = mocks.twilio.generateMockSid('SM');
-      const payload = mocks.twilio.generateMockSmsStatusPayload(messageSid, 'delivered');
+      const messageSid = mocks.signalwire.generateMockSid('SM');
+      const payload = mocks.signalwire.generateMockSmsStatusPayload(messageSid, 'delivered');
 
       const response = await request(app)
-        .post('/webhook/twilio/sms-status')
+        .post('/webhook/signalwire/sms-status')
         .send(payload)
         .expect(200);
     });

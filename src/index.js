@@ -3,7 +3,7 @@
  * After-Hours AI Receptionist for Urgent Care
  *
  * Architecture:
- * Caller → Twilio → RetellAI (Voice) → Hathr.ai (LLM) → Keragon (Automation)
+ * Caller → SignalWire → RetellAI (Voice) → Hathr.ai (LLM) → Keragon (Automation)
  */
 
 require('dotenv').config();
@@ -14,7 +14,7 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 
 const logger = require('./config/logger');
-const twilioConfig = require('./config/twilio');
+const signalwireConfig = require('./config/signalwire');
 const retellConfig = require('./config/retell');
 const retellHandler = require('./webhooks/retellHandler');
 const healthCheck = require('./lib/healthCheck');
@@ -35,7 +35,7 @@ app.use(helmet());
 app.use(cors({
   origin: [
     'https://api.retellai.com',
-    'https://api.twilio.com',
+    'https://api.signalwire.com',
     'https://api.keragon.com'
   ],
   methods: ['GET', 'POST'],
@@ -134,31 +134,31 @@ app.post('/webhook/retell', retellHandler.handleWebhook);
 app.post('/webhook/retell/status', retellHandler.handleCallStatus);
 
 // ===========================================
-// TWILIO WEBHOOK ENDPOINTS
+// SIGNALWIRE WEBHOOK ENDPOINTS
 // ===========================================
 
 // Incoming call handler - routes to RetellAI
-app.post('/webhook/twilio/voice', async (req, res) => {
+app.post('/webhook/signalwire/voice', async (req, res) => {
   try {
-    logger.info('Incoming Twilio call', {
+    logger.info('Incoming SignalWire call', {
       from: req.body.From,
       to: req.body.To,
       callSid: req.body.CallSid
     });
 
-    // Generate TwiML to connect to RetellAI
-    const twiml = twilioConfig.generateRetellTwiml(req.body);
+    // Generate LaML (TwiML-compatible) to connect to RetellAI
+    const laml = signalwireConfig.generateRetellTwiml(req.body);
 
     res.type('text/xml');
-    res.send(twiml);
+    res.send(laml);
   } catch (error) {
-    logger.error('Error handling Twilio voice webhook', { error: error.message });
+    logger.error('Error handling SignalWire voice webhook', { error: error.message });
     res.status(500).send('<Response><Say>We are experiencing technical difficulties. Please try again later.</Say></Response>');
   }
 });
 
 // SMS status callback
-app.post('/webhook/twilio/sms-status', async (req, res) => {
+app.post('/webhook/signalwire/sms-status', async (req, res) => {
   try {
     logger.info('SMS status update', {
       messageSid: req.body.MessageSid,
@@ -241,9 +241,9 @@ const server = app.listen(PORT, () => {
 ║  Environment: ${(process.env.NODE_ENV || 'development').padEnd(38)}║
 ║                                                       ║
 ║  Endpoints:                                           ║
-║  • GET  /health              - Health check           ║
-║  • POST /webhook/retell      - RetellAI events        ║
-║  • POST /webhook/twilio/voice - Incoming calls        ║
+║  • GET  /health                   - Health check      ║
+║  • POST /webhook/retell           - RetellAI events   ║
+║  • POST /webhook/signalwire/voice - Incoming calls    ║
 ║  • POST /webhook/keragon/callback - Automation        ║
 ╚═══════════════════════════════════════════════════════╝
   `);

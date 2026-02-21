@@ -71,7 +71,8 @@ const healthCheckers = {
 
     try {
       // Light API call to verify credentials
-      const { RestClient } = require('@signalwire/compatibility-api');
+      // eslint-disable-next-line node/no-extraneous-require
+      const { RestClient } = require('../../node_modules/@signalwire/compatibility-api/index.js');
       const swClient = new RestClient(
         process.env.SIGNALWIRE_PROJECT_ID,
         process.env.SIGNALWIRE_API_TOKEN,
