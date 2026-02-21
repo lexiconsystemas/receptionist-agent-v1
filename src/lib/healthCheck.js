@@ -46,16 +46,16 @@ const healthCheckers = {
   },
 
   /**
-   * Check Twilio API connectivity
+   * Check SignalWire API connectivity
    */
-  twilio: async () => {
+  signalwire: async () => {
     const startTime = Date.now();
 
     // Check if credentials are configured
-    if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN) {
+    if (!process.env.SIGNALWIRE_PROJECT_ID || !process.env.SIGNALWIRE_API_TOKEN || !process.env.SIGNALWIRE_SPACE_URL) {
       return {
         status: STATUS.DEGRADED,
-        error: 'Twilio credentials not configured',
+        error: 'SignalWire credentials not configured (need SIGNALWIRE_PROJECT_ID, SIGNALWIRE_API_TOKEN, SIGNALWIRE_SPACE_URL)',
         configured: false
       };
     }
@@ -71,12 +71,14 @@ const healthCheckers = {
 
     try {
       // Light API call to verify credentials
-      const twilio = require('twilio')(
-        process.env.TWILIO_ACCOUNT_SID,
-        process.env.TWILIO_AUTH_TOKEN
+      const { RestClient } = require('@signalwire/compatibility-api');
+      const swClient = new RestClient(
+        process.env.SIGNALWIRE_PROJECT_ID,
+        process.env.SIGNALWIRE_API_TOKEN,
+        { signalwireSpaceUrl: process.env.SIGNALWIRE_SPACE_URL }
       );
 
-      await twilio.api.accounts(process.env.TWILIO_ACCOUNT_SID).fetch();
+      await swClient.api.accounts(process.env.SIGNALWIRE_PROJECT_ID).fetch();
 
       return {
         status: STATUS.HEALTHY,
