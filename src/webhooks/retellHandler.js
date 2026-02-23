@@ -117,6 +117,12 @@ async function handleCallEnded(event) {
     disposition = 'spam';
   } else if (callData.endReason === 'caller_hangup' && callData.duration < 30) {
     disposition = 'dropped';
+  } else if (callData.extractedData && callData.extractedData.callbackRequested) {
+    disposition = 'callback_requested';
+  } else if (callData.extractedData && callData.extractedData.appointmentIntent === 'cancel') {
+    disposition = 'appointment_cancel';
+  } else if (callData.extractedData && callData.extractedData.appointmentIntent === 'change') {
+    disposition = 'appointment_change';
   }
 
   // Extract and validate caller information
@@ -132,6 +138,10 @@ async function handleCallEnded(event) {
     patient_type: callerInfo.patientType,
     reason_for_visit: callerInfo.reasonForVisit,
     intended_visit_timeframe: callerInfo.visitTimeframe,
+    existing_appointment_id: callerInfo.existingAppointmentId || null,
+    appointment_type: callerInfo.appointmentType || null,
+    callback_requested: callerInfo.callbackRequested || false,
+    sms_consent_explicit: callerInfo.smsConsent,
     disposition,
     emergency_trigger: emergencyCheck.isEmergency,
     spam_flag: spamCheck.isSpam,
@@ -157,7 +167,21 @@ async function handleCallEnded(event) {
     ...callLog
   });
 
-  // Send SMS follow-up if appropriate
+  // Send callback confirmation SMS if caller requested a callback
+  if (callLog.callback_requested && callLog.caller_id) {
+    try {
+      await smsService.sendCallbackConfirmation(callLog.caller_id, {
+        callerName: callerInfo.callerName
+      });
+    } catch (error) {
+      logger.warn('Failed to send callback confirmation SMS', {
+        callId: callData.callId,
+        error: error.message
+      });
+    }
+  }
+
+  // Send standard SMS follow-up if appropriate
   if (shouldSendSms(callLog)) {
     try {
       const smsResult = await smsService.sendFollowUp(callLog);
@@ -258,7 +282,7 @@ async function handleCallStatus(req, res) {
 
 /**
  * Determine if SMS follow-up should be sent
- * Based on scope: only with implied consent, not for spam/emergencies
+ * Based on scope: only with implied (or explicit) consent, not for spam/emergencies
  */
 function shouldSendSms(callLog) {
   // Don't send SMS if feature is disabled
@@ -281,12 +305,23 @@ function shouldSendSms(callLog) {
     return false;
   }
 
+  // Callback/change/cancel calls get dedicated SMS flows — skip generic follow-up
+  const dedicatedSmsDispositions = ['callback_requested', 'appointment_change', 'appointment_cancel'];
+  if (dedicatedSmsDispositions.includes(callLog.disposition)) {
+    return false;
+  }
+
+  // If caller explicitly declined SMS, honour that
+  if (callLog.sms_consent_explicit === false) {
+    return false;
+  }
+
   // Only send if we have a phone number
   if (!callLog.caller_id) {
     return false;
   }
 
-  // Only send if call was meaningful (>30 seconds)
+  // Only send if call was meaningful (>30 seconds) — implied consent threshold
   if (callLog.call_duration_seconds < 30) {
     return false;
   }

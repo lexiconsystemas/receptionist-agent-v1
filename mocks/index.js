@@ -8,12 +8,16 @@
  *
  * In production (NODE_ENV=production), mocks are disabled and
  * real API credentials must be configured.
+ *
+ * NOTE: SignalWire has been replaced by RetellAI for telephony.
+ * An SMS-only provider (Twilio/Vonage — TBD) will handle outbound/inbound SMS.
+ * The smsMock below is a lightweight stub until the real provider is confirmed.
  */
 
 const retellMock = require('./retell.mock');
 const keragonMock = require('./keragon.mock');
 const hathrMock = require('./hathr.mock');
-const signalwireMock = require('./signalwire.mock');
+const smsMock = require('./sms.mock');
 
 const MOCK_ENABLED = process.env.USE_MOCKS === 'true' || process.env.NODE_ENV === 'development';
 
@@ -44,12 +48,10 @@ function getMockStatus() {
         mocked: MOCK_ENABLED,
         real_credentials_configured: !!process.env.HATHR_API_KEY
       },
-      signalwire: {
+      sms: {
         mocked: MOCK_ENABLED,
         real_credentials_configured: !!(
-          process.env.SIGNALWIRE_PROJECT_ID &&
-          process.env.SIGNALWIRE_API_TOKEN &&
-          process.env.SIGNALWIRE_SPACE_URL
+          process.env.TWILIO_ACCOUNT_SID || process.env.SMS_API_KEY
         )
       }
     }
@@ -61,7 +63,7 @@ function getMockStatus() {
  */
 function clearAllMockStores() {
   keragonMock.clearMockStore();
-  signalwireMock.clearMockStores();
+  smsMock.clearMockStore();
   console.log('[MOCKS] All mock stores cleared');
 }
 
@@ -71,9 +73,8 @@ function clearAllMockStores() {
 function getAllMockStats() {
   return {
     keragon: keragonMock.getMockStats(),
-    signalwire: {
-      sms_count: signalwireMock.getMockSmsMessages().length,
-      call_count: signalwireMock.getMockCalls().length
+    sms: {
+      sms_count: smsMock.getMockMessages().length
     }
   };
 }
@@ -95,6 +96,6 @@ module.exports = {
   // Hathr.ai mocks
   hathr: hathrMock,
 
-  // SignalWire mocks
-  signalwire: signalwireMock
+  // SMS provider mock (provider TBD)
+  sms: smsMock
 };

@@ -1,5 +1,12 @@
 /**
- * SignalWire Client Configuration
+ * DEPRECATED — SignalWire has been replaced by RetellAI for telephony.
+ * This file is no longer imported anywhere.
+ * SMS is now handled by src/config/smsProvider.js (provider TBD — Twilio/Vonage).
+ * Kept for historical reference; safe to delete once SMS provider is confirmed.
+ *
+ * ────────────────────────────────────────────────────────────────────────────
+ *
+ * SignalWire Client Configuration (ARCHIVED)
  * Handles voice calls and SMS for the Receptionist Agent
  *
  * SignalWire is the specified telephony provider per scope §4.

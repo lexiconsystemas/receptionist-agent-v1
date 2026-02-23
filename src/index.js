@@ -3,7 +3,8 @@
  * After-Hours AI Receptionist for Urgent Care
  *
  * Architecture:
- * Caller → SignalWire → RetellAI (Voice) → Hathr.ai (LLM) → Keragon (Automation)
+ * Caller → RetellAI (Telephony + Voice AI) → Keragon (Automation)
+ * SMS (outbound/inbound) handled by separate SMS provider (TBD — Twilio/Vonage)
  */
 
 require('dotenv').config();
@@ -14,11 +15,12 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 
 const logger = require('./config/logger');
-const signalwireConfig = require('./config/signalwire');
 const retellConfig = require('./config/retell');
 const retellHandler = require('./webhooks/retellHandler');
+const inboundSmsHandler = require('./webhooks/inboundSmsHandler');
 const healthCheck = require('./lib/healthCheck');
 const { registry: circuitBreakerRegistry } = require('./lib/circuitBreaker');
+const { startScheduler, stopScheduler } = require('./services/schedulerService');
 const mocks = require('../mocks');
 
 const app = express();
@@ -35,7 +37,6 @@ app.use(helmet());
 app.use(cors({
   origin: [
     'https://api.retellai.com',
-    'https://api.signalwire.com',
     'https://api.keragon.com'
   ],
   methods: ['GET', 'POST'],
@@ -134,47 +135,31 @@ app.post('/webhook/retell', retellHandler.handleWebhook);
 app.post('/webhook/retell/status', retellHandler.handleCallStatus);
 
 // ===========================================
-// SIGNALWIRE WEBHOOK ENDPOINTS
+// SMS WEBHOOK ENDPOINTS
+// NOTE: RetellAI handles all telephony (inbound calls, call audio, PSTN).
+// An SMS provider (Twilio/Vonage — TBD) handles outbound/inbound SMS only.
+// The inbound-sms path below will be updated to match the chosen provider's
+// webhook format once credentials are confirmed.
 // ===========================================
 
-// Incoming call handler - routes to RetellAI
-app.post('/webhook/signalwire/voice', async (req, res) => {
-  try {
-    logger.info('Incoming SignalWire call', {
-      from: req.body.From,
-      to: req.body.To,
-      callSid: req.body.CallSid
-    });
-
-    // Generate LaML (TwiML-compatible) to connect to RetellAI
-    const laml = signalwireConfig.generateRetellTwiml(req.body);
-
-    res.type('text/xml');
-    res.send(laml);
-  } catch (error) {
-    logger.error('Error handling SignalWire voice webhook', { error: error.message });
-    res.status(500).send('<Response><Say>We are experiencing technical difficulties. Please try again later.</Say></Response>');
-  }
-});
-
-// SMS status callback
-app.post('/webhook/signalwire/sms-status', async (req, res) => {
+// SMS delivery status callback (provider-agnostic path)
+app.post('/webhook/sms/status', async (req, res) => {
   try {
     logger.info('SMS status update', {
-      messageSid: req.body.MessageSid,
-      status: req.body.MessageStatus,
-      to: req.body.To
+      messageSid: req.body.MessageSid || req.body.message_uuid,
+      status: req.body.MessageStatus || req.body.status,
+      to: req.body.To || req.body.to
     });
-
-    // Log SMS delivery status to Keragon
-    // This will be implemented in smsService.js
-
     res.sendStatus(200);
   } catch (error) {
     logger.error('Error handling SMS status webhook', { error: error.message });
     res.sendStatus(500);
   }
 });
+
+// Inbound SMS from patients (ratings, opt-outs, free-text replies)
+// Path intentionally provider-agnostic — update SMS_WEBHOOK_URL env var accordingly
+app.post('/webhook/sms/inbound', inboundSmsHandler.handleInboundSms);
 
 // ===========================================
 // KERAGON WEBHOOK ENDPOINTS
@@ -233,6 +218,9 @@ const server = app.listen(PORT, () => {
     nodeVersion: process.version
   });
 
+  // Start cron jobs (appointment reminders + PHI deletion)
+  startScheduler();
+
   console.log(`
 ╔═══════════════════════════════════════════════════════╗
 ║     RECEPTIONIST AGENT V1 - After-Hours AI           ║
@@ -241,10 +229,10 @@ const server = app.listen(PORT, () => {
 ║  Environment: ${(process.env.NODE_ENV || 'development').padEnd(38)}║
 ║                                                       ║
 ║  Endpoints:                                           ║
-║  • GET  /health                   - Health check      ║
-║  • POST /webhook/retell           - RetellAI events   ║
-║  • POST /webhook/signalwire/voice - Incoming calls    ║
-║  • POST /webhook/keragon/callback - Automation        ║
+║  • GET  /health                        - Health check ║
+║  • POST /webhook/retell                - RetellAI     ║
+║  • POST /webhook/sms/inbound           - SMS replies  ║
+║  • POST /webhook/keragon/callback      - Automation   ║
 ╚═══════════════════════════════════════════════════════╝
   `);
 });
@@ -252,6 +240,7 @@ const server = app.listen(PORT, () => {
 // Graceful shutdown
 process.on('SIGTERM', () => {
   logger.info('SIGTERM received, shutting down gracefully');
+  stopScheduler();
   server.close(() => {
     logger.info('Server closed');
     process.exit(0);
@@ -260,6 +249,7 @@ process.on('SIGTERM', () => {
 
 process.on('SIGINT', () => {
   logger.info('SIGINT received, shutting down gracefully');
+  stopScheduler();
   server.close(() => {
     logger.info('Server closed');
     process.exit(0);

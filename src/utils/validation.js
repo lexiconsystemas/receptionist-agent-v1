@@ -17,12 +17,15 @@ const PATIENT_TYPES = ['new', 'returning', 'unknown'];
  * Valid call dispositions
  */
 const DISPOSITIONS = [
-  'completed',      // Normal completed call
-  'high_intent',    // Caller expressed strong intent to visit
-  'emergency',      // Emergency detected, redirected to 911
-  'spam',           // Spam/robocall detected
-  'dropped',        // Call dropped/disconnected early
-  'incomplete'      // Call ended with incomplete information
+  'completed',            // Normal completed call
+  'high_intent',          // Caller expressed strong intent to visit
+  'emergency',            // Emergency detected, redirected to 911
+  'spam',                 // Spam/robocall detected
+  'dropped',              // Call dropped/disconnected early
+  'incomplete',           // Call ended with incomplete information
+  'appointment_change',   // Caller wants to change an existing appointment
+  'appointment_cancel',   // Caller wants to cancel an existing appointment
+  'callback_requested'    // Caller asked to be called back / left message
 ];
 
 /**
@@ -70,6 +73,26 @@ function validateCallerInfo(data) {
   // Validate visit timeframe
   result.visitTimeframe = validateTimeframe(
     data.visitTimeframe || data.visit_timeframe || data.intended_timeframe
+  );
+
+  // Existing appointment ID (for change/cancel flows)
+  result.existingAppointmentId = validateAppointmentId(
+    data.existingAppointmentId || data.existing_appointment_id || data.appointment_id
+  );
+
+  // Appointment type (e.g. 'new', 'follow_up', 'urgent')
+  result.appointmentType = validateAppointmentType(
+    data.appointmentType || data.appointment_type
+  );
+
+  // Explicit SMS consent captured during call (overrides implied-consent logic)
+  result.smsConsent = typeof data.smsConsent === 'boolean'
+    ? data.smsConsent
+    : (data.sms_consent === true || data.sms_consent === 'true' || null);
+
+  // Whether caller explicitly requested a callback
+  result.callbackRequested = !!(
+    data.callbackRequested || data.callback_requested || data.callback
   );
 
   result.isValid = errors.length === 0;
@@ -240,6 +263,29 @@ function validateTimeframe(timeframe) {
 }
 
 /**
+ * Validate an existing appointment ID (alphanumeric, max 64 chars)
+ * @param {string} id - Raw appointment ID from call
+ * @returns {string|null}
+ */
+function validateAppointmentId(id) {
+  if (!id || typeof id !== 'string') return null;
+  const cleaned = id.trim().replace(/[^a-zA-Z0-9\-_]/g, '');
+  return cleaned.length > 0 && cleaned.length <= 64 ? cleaned : null;
+}
+
+/**
+ * Validate appointment type
+ * @param {string} type - Raw appointment type
+ * @returns {string|null}
+ */
+function validateAppointmentType(type) {
+  if (!type || typeof type !== 'string') return null;
+  const valid = ['new', 'follow_up', 'urgent', 'routine', 'telehealth'];
+  const normalized = type.toLowerCase().trim().replace(/\s+/g, '_');
+  return valid.includes(normalized) ? normalized : null;
+}
+
+/**
  * Validate call disposition
  * @param {string} disposition - Raw disposition
  * @returns {string} Valid disposition
@@ -266,7 +312,15 @@ function validateDisposition(disposition) {
     'junk': 'spam',
     'robocall': 'spam',
     '911': 'emergency',
-    'er': 'emergency'
+    'er': 'emergency',
+    'change': 'appointment_change',
+    'reschedule': 'appointment_change',
+    'cancel': 'appointment_cancel',
+    'cancellation': 'appointment_cancel',
+    'callback': 'callback_requested',
+    'call back': 'callback_requested',
+    'message': 'callback_requested',
+    'leave message': 'callback_requested'
   };
 
   return mappings[normalized] || 'incomplete';
@@ -320,6 +374,8 @@ module.exports = {
   validatePatientType,
   sanitizeReasonForVisit,
   validateTimeframe,
+  validateAppointmentId,
+  validateAppointmentType,
   validateDisposition,
   validateCallRecord,
   PATIENT_TYPES,

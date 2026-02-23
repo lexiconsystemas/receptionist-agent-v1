@@ -20,7 +20,8 @@ The Receptionist Agent V1 is an enterprise-grade AI-powered after-hours receptio
 - **Application Layer**: Node.js/Express server with business logic
 - **Voice Processing**: RetellAI integration for speech recognition and synthesis
 - **AI Intelligence**: Hathr.ai healthcare-focused LLM for conversation management
-- **Telephony**: SignalWire for inbound/outbound calls and SMS
+- **Telephony**: RetellAI for all inbound/outbound calls (PSTN + HIPAA BAA included)
+- **SMS**: Separate SMS provider (TBD — Twilio/Vonage) for outbound/inbound SMS only
 - **Automation**: Keragon for healthcare workflow orchestration
 - **Caching**: Redis for session management and scalability
 - **Monitoring**: Comprehensive health checks and logging
@@ -29,8 +30,8 @@ The Receptionist Agent V1 is an enterprise-grade AI-powered after-hours receptio
 
 | Service | Criticality | SLA | Fallback |
 |---------|-------------|-----|----------|
-| **RetellAI** | Critical | 99.9% | Mock mode |
-| **SignalWire** | Critical | 99.9% | Error handling |
+| **RetellAI** | Critical | 99.9% | Mock mode (telephony + voice) |
+| **SMS Provider** | High | 99.5% | Error handling (SMS only) |
 | **Keragon** | High | 99.5% | Local logging |
 | **Hathr.ai** | Critical | 99.9% | Basic responses |
 | **Redis** | High | 99.5% | In-memory fallback |
@@ -53,7 +54,7 @@ To ensure proper system initialization and service availability.
 1. **Pre-Startup Checks**
    ```bash
    # Verify environment configuration
-   cat .env | grep -E "(SIGNALWIRE|RETELL|KERAGON|HATHR)"
+   cat .env | grep -E "(TWILIO|SMS|RETELL|KERAGON|HATHR)"
    
    # Check Redis connectivity
    redis-cli -h localhost -p 6379 ping

@@ -8,9 +8,9 @@ The AI Voice Receptionist is a modular, reusable system designed for urgent care
 
 | Component | Technology | Purpose |
 |-----------|------------|---------|
-| **Voice Platform** | RetellAI | Voice synthesis, recognition, multi-call concurrency |
+| **Voice + Telephony** | RetellAI | Voice synthesis, recognition, telephony, PSTN, multi-call concurrency, HIPAA BAA |
 | **LLM Layer** | Hathr.ai | Healthcare-focused conversation AI |
-| **Telephony** | SignalWire | Inbound/outbound calls, SMS |
+| **SMS** | TBD (Twilio/Vonage) | Outbound/inbound SMS only (post-call follow-up, reminders, ratings) |
 | **Automation** | Keragon | Healthcare workflow orchestration, logging |
 | **Calendar** | Google Calendar | Clinic hours, soft scheduling reference |
 | **Backend** | Node.js/Express | Webhook handling, business logic |
@@ -28,23 +28,13 @@ The AI Voice Receptionist is a modular, reusable system designed for urgent care
 │         │ Phone Call                                                        │
 │         ▼                                                                   │
 │    ┌──────────────────────────────────────────────────────────────────┐    │
-│    │                       SIGNALWIRE                                  │    │
-│    │  • Inbound call reception                                         │    │
-│    │  • SMS sending                                                    │    │
-│    │  • Caller ID capture                                              │    │
-│    └────────────────────────────┬─────────────────────────────────────┘    │
-│                                 │ WebSocket Audio Stream                    │
-│                                 ▼                                           │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                           VOICE AI LAYER                                    │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│    ┌──────────────────────────────────────────────────────────────────┐    │
-│    │                        RETELL AI                                  │    │
+│    │                RETELL AI (Telephony + Voice AI)                   │    │
+│    │  • Inbound call reception (PSTN / phone number management)        │    │
 │    │  • Voice synthesis (natural speech)                               │    │
 │    │  • Speech recognition (STT)                                       │    │
 │    │  • Multi-call concurrency handling                                │    │
 │    │  • Real-time audio processing                                     │    │
+│    │  • HIPAA BAA covers telephony layer                               │    │
 │    └────────────────────────────┬─────────────────────────────────────┘    │
 │                                 │ LLM API Calls                             │
 │                                 ▼                                           │
@@ -73,7 +63,7 @@ The AI Voice Receptionist is a modular, reusable system designed for urgent care
 │    │  ┌─────────────────────────────────────────────────────────────┐ │    │
 │    │  │                    SERVICES LAYER                           │ │    │
 │    │  │  • callLogger.js  - Log to Keragon                          │ │    │
-│    │  │  • smsService.js  - SMS follow-ups via SignalWire            │ │    │
+│    │  │  • smsService.js  - SMS follow-ups via SMS provider (TBD)   │ │    │
 │    │  └─────────────────────────────────────────────────────────────┘ │    │
 │    └──────────────────────────────────────────────────────────────────┘    │
 │                                 │                                           │
@@ -110,9 +100,8 @@ The AI Voice Receptionist is a modular, reusable system designed for urgent care
 ### Inbound Call Flow
 
 ```
-1. Caller dials SignalWire number
-2. SignalWire routes to RetellAI via WebSocket
-3. RetellAI handles voice ↔ text conversion
+1. Caller dials RetellAI-managed phone number
+2. RetellAI handles telephony + voice ↔ text conversion directly
 4. Hathr.ai processes conversation:
    - Identifies caller intent
    - Captures information (name, reason, timeframe)
@@ -143,7 +132,7 @@ The AI Voice Receptionist is a modular, reusable system designed for urgent care
 2. Check: Not spam, not emergency, not dropped
 3. Check: Duration > 30 seconds (implied consent)
 4. Generate contextual message with clinic info
-5. Send via SignalWire with status callback
+5. Send via SMS provider (TBD) with status callback
 6. Log SMS status to Keragon
 ```
 
@@ -225,8 +214,8 @@ The system is designed as a **base model** that can be customized per clinic:
 | `/health` | GET | Health check |
 | `/webhook/retell` | POST | RetellAI call events |
 | `/webhook/retell/status` | POST | Call status updates |
-| `/webhook/signalwire/voice` | POST | Incoming calls |
-| `/webhook/signalwire/sms-status` | POST | SMS delivery status |
+| `/webhook/sms/inbound` | POST | Inbound SMS replies (ratings, opt-outs) |
+| `/webhook/sms/status` | POST | SMS delivery status callbacks |
 | `/webhook/keragon/callback` | POST | Automation callbacks |
 
 ## Error Handling

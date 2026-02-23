@@ -2,6 +2,10 @@
  * Call Flow Integration Tests
  * Tests end-to-end call handling scenarios
  *
+ * Architecture (updated):
+ *   RetellAI handles all telephony — no voice webhook needed from this server.
+ *   SMS (outbound/inbound) routes through a separate provider (TBD).
+ *
  * Run with: npm test -- tests/integration/callFlow.test.js
  */
 
@@ -19,13 +23,10 @@ const mocks = require('../../mocks');
 let server;
 
 beforeAll(() => {
-  // The server is already started by index.js, get its reference
-  // We need to close it after tests
   server = app.server;
 });
 
 afterAll((done) => {
-  // Close the server to allow Jest to exit
   if (app.server) {
     app.server.close(done);
   } else {
@@ -37,24 +38,6 @@ describe('Call Flow Integration Tests', () => {
   beforeEach(() => {
     // Clear mock stores between tests
     mocks.clearAllMockStores();
-  });
-
-  describe('Incoming Call Webhook', () => {
-    it('should accept incoming SignalWire call and return LaML', async () => {
-      const callPayload = mocks.signalwire.generateMockIncomingCallPayload({
-        from: '+15551234567',
-        to: '+15559999999'
-      });
-
-      const response = await request(app)
-        .post('/webhook/signalwire/voice')
-        .send(callPayload)
-        .expect('Content-Type', /xml/)
-        .expect(200);
-
-      expect(response.text).toContain('<Response>');
-      expect(response.text).toContain('<Connect>');
-    });
   });
 
   describe('RetellAI Webhooks', () => {
@@ -96,7 +79,7 @@ describe('Call Flow Integration Tests', () => {
 
       expect(response.body.success).toBe(true);
 
-      // Verify emergency was logged (emergency calls have emergency_trigger: true)
+      // Verify emergency was logged
       const keragonStats = mocks.keragon.getMockStats();
       expect(keragonStats.emergency_calls).toBeGreaterThan(0);
     });
@@ -139,13 +122,25 @@ describe('Call Flow Integration Tests', () => {
     });
   });
 
-  describe('SMS Status Callback', () => {
+  describe('SMS Webhooks', () => {
     it('should handle SMS delivery status update', async () => {
-      const messageSid = mocks.signalwire.generateMockSid('SM');
-      const payload = mocks.signalwire.generateMockSmsStatusPayload(messageSid, 'delivered');
+      const messageSid = mocks.sms.generateMockSid('SM');
+      const payload = mocks.sms.generateMockStatusPayload(messageSid, 'delivered');
 
       const response = await request(app)
-        .post('/webhook/signalwire/sms-status')
+        .post('/webhook/sms/status')
+        .send(payload)
+        .expect(200);
+    });
+
+    it('should handle inbound SMS reply', async () => {
+      const payload = mocks.sms.generateMockInboundPayload({
+        from: '+15551234567',
+        body: '4'
+      });
+
+      const response = await request(app)
+        .post('/webhook/sms/inbound')
         .send(payload)
         .expect(200);
     });
@@ -209,5 +204,14 @@ describe('Health Check Endpoints', () => {
       .expect(200);
 
     expect(response.body.mock_enabled).toBe(true);
+  });
+
+  it('health/mocks should report sms service (not signalwire)', async () => {
+    const response = await request(app)
+      .get('/health/mocks')
+      .expect(200);
+
+    expect(response.body.services).toHaveProperty('sms');
+    expect(response.body.services).not.toHaveProperty('signalwire');
   });
 });

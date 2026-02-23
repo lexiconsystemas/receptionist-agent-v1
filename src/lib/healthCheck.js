@@ -46,16 +46,16 @@ const healthCheckers = {
   },
 
   /**
-   * Check SignalWire API connectivity
+   * Check SMS provider connectivity (Twilio/Vonage — TBD)
+   * Telephony is now fully handled by RetellAI; SMS is the only
+   * remaining third-party communication dependency.
    */
-  signalwire: async () => {
-    const startTime = Date.now();
-
-    // Check if credentials are configured
-    if (!process.env.SIGNALWIRE_PROJECT_ID || !process.env.SIGNALWIRE_API_TOKEN || !process.env.SIGNALWIRE_SPACE_URL) {
+  sms: async () => {
+    // Check if SMS provider credentials are configured
+    if (!process.env.SMS_API_KEY && !process.env.TWILIO_ACCOUNT_SID) {
       return {
         status: STATUS.DEGRADED,
-        error: 'SignalWire credentials not configured (need SIGNALWIRE_PROJECT_ID, SIGNALWIRE_API_TOKEN, SIGNALWIRE_SPACE_URL)',
+        error: 'SMS provider credentials not configured (SMS_API_KEY or TWILIO_ACCOUNT_SID)',
         configured: false
       };
     }
@@ -69,29 +69,10 @@ const healthCheckers = {
       };
     }
 
-    try {
-      // Light API call to verify credentials
-      const { RestClient } = require('@signalwire/compatibility-api');
-      const swClient = new RestClient(
-        process.env.SIGNALWIRE_PROJECT_ID,
-        process.env.SIGNALWIRE_API_TOKEN,
-        { signalwireSpaceUrl: process.env.SIGNALWIRE_SPACE_URL }
-      );
-
-      await swClient.api.accounts(process.env.SIGNALWIRE_PROJECT_ID).fetch();
-
-      return {
-        status: STATUS.HEALTHY,
-        latency: Date.now() - startTime,
-        configured: true
-      };
-    } catch (error) {
-      return {
-        status: STATUS.UNHEALTHY,
-        error: error.message,
-        latency: Date.now() - startTime
-      };
-    }
+    return {
+      status: STATUS.HEALTHY,
+      configured: true
+    };
   },
 
   /**

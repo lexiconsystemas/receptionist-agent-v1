@@ -7,14 +7,68 @@
  * - Reminder of clinic hours, location, or visit tips
  * - Only sent when implied consent is present
  * - Tracks delivery status in Keragon
+ * - Bilingual (English / Spanish) support
+ * - Opt-out check via inboundSmsHandler before every outbound send
+ *
+ * NOTE: Telephony is now fully handled by RetellAI.
+ * SMS is routed through smsProvider.js (provider TBD — Twilio/Vonage).
  */
 
-const signalwireConfig = require('../config/signalwire');
+const smsProvider = require('../config/smsProvider');
 const callLogger = require('./callLogger');
 const logger = require('../config/logger');
 
 // SMS delay before sending follow-up (in milliseconds)
 const SMS_DELAY_MS = (parseInt(process.env.SMS_FOLLOWUP_DELAY_MINUTES) || 5) * 60 * 1000;
+
+/**
+ * Send a raw SMS to a phone number (no opt-out check — caller must gate first)
+ * Low-level helper used internally by inboundSmsHandler and schedulerService
+ * @param {string} phoneNumber - E.164 destination number
+ * @param {string} message - Pre-built message string
+ * @returns {Promise<Object>} { success, messageSid?, error? }
+ */
+async function sendRaw(phoneNumber, message) {
+  if (!phoneNumber || !message) {
+    throw new Error('sendRaw requires phoneNumber and message');
+  }
+
+  const result = await smsProvider.sendSms(phoneNumber, message);
+
+  logger.info('Raw SMS sent', { to: phoneNumber, messageSid: result.messageSid });
+
+  return {
+    success: true,
+    messageSid: result.messageSid,
+    status: result.status
+  };
+}
+
+/**
+ * Send callback confirmation SMS
+ * Sent when a caller asks to be called back rather than leaving a message
+ * @param {string} phoneNumber - Caller's phone number
+ * @param {Object} opts - { callerName?, locale? }
+ * @returns {Promise<Object>} SMS send result
+ */
+async function sendCallbackConfirmation(phoneNumber, opts = {}) {
+  const clinicName = process.env.CLINIC_NAME || 'our urgent care team';
+  const locale = opts.locale || 'en';
+  const name = opts.callerName ? `, ${opts.callerName}` : '';
+
+  const message = locale === 'es'
+    ? `Hola${name}, hemos recibido su solicitud de devolución de llamada. Un miembro de nuestro equipo se pondrá en contacto con usted durante el próximo horario de atención. — ${clinicName}`
+    : `Hi${name}, we received your callback request. A team member will reach out during the next available staffed hours. — ${clinicName}`;
+
+  try {
+    const result = await sendRaw(phoneNumber, message);
+    logger.info('Callback confirmation SMS sent', { to: phoneNumber });
+    return result;
+  } catch (error) {
+    logger.error('Failed to send callback confirmation SMS', { error: error.message });
+    return { success: false, error: error.message };
+  }
+}
 
 /**
  * Send follow-up SMS after a completed call
@@ -29,8 +83,27 @@ async function sendFollowUp(callData) {
     return { success: false, reason: 'No phone number' };
   }
 
+  // Check TCPA opt-out before sending
+  try {
+    const { isOptedOut } = require('../webhooks/inboundSmsHandler');
+    if (await isOptedOut(phoneNumber)) {
+      logger.info('SMS suppressed — number opted out', { callId: callData.call_id, phoneNumber });
+      return { success: false, reason: 'Opted out' };
+    }
+  } catch (err) {
+    // Non-fatal — proceed if opt-out check fails (cache unavailable)
+    logger.warn('Opt-out check failed — proceeding with send', { error: err.message });
+  }
+
+  // Resolve locale for this caller
+  let locale = 'en';
+  try {
+    const { getLocaleForNumber } = require('../webhooks/inboundSmsHandler');
+    locale = await getLocaleForNumber(phoneNumber);
+  } catch (_) { /* fallback to en */ }
+
   // Generate appropriate message based on call context
-  const message = generateFollowUpMessage(callData);
+  const message = generateFollowUpMessage(callData, locale);
 
   try {
     // Optional delay before sending
@@ -38,7 +111,7 @@ async function sendFollowUp(callData) {
       await delay(SMS_DELAY_MS);
     }
 
-    const result = await signalwireConfig.sendSms(phoneNumber, message);
+    const result = await smsProvider.sendSms(phoneNumber, message);
 
     logger.info('Follow-up SMS sent', {
       callId: callData.call_id,
@@ -74,43 +147,50 @@ async function sendFollowUp(callData) {
 /**
  * Generate follow-up message based on call context
  * @param {Object} callData - Call data
+ * @param {string} [locale='en'] - 'en' or 'es'
  * @returns {string} SMS message
  */
-function generateFollowUpMessage(callData) {
+function generateFollowUpMessage(callData, locale = 'en') {
   const clinicName = process.env.CLINIC_NAME || 'our urgent care';
   const clinicAddress = process.env.CLINIC_ADDRESS || '';
   const clinicPhone = process.env.CLINIC_PHONE || '';
+  const es = locale === 'es';
 
   // Personalize if we have the caller's name
   const greeting = callData.caller_name
-    ? `Hi ${callData.caller_name}, `
-    : 'Hi, ';
+    ? (es ? `Hola ${callData.caller_name}, ` : `Hi ${callData.caller_name}, `)
+    : (es ? 'Hola, ' : 'Hi, ');
 
   // Base message
-  let message = `${greeting}thank you for calling ${clinicName}. `;
+  let message = es
+    ? `${greeting}gracias por llamar a ${clinicName}. `
+    : `${greeting}thank you for calling ${clinicName}. `;
 
   // Add visit timeframe reminder if captured
   if (callData.intended_visit_timeframe) {
-    message += `We noted you plan to visit ${callData.intended_visit_timeframe}. `;
+    message += es
+      ? `Recordamos que planea visitarnos ${callData.intended_visit_timeframe}. `
+      : `We noted you plan to visit ${callData.intended_visit_timeframe}. `;
   }
 
   // Add clinic info
-  message += `Walk-ins welcome!`;
+  message += es ? '¡Aceptamos pacientes sin cita!' : 'Walk-ins welcome!';
 
   if (clinicAddress) {
-    message += ` Location: ${clinicAddress}.`;
+    message += es ? ` Dirección: ${clinicAddress}.` : ` Location: ${clinicAddress}.`;
   }
 
   if (clinicPhone) {
-    message += ` Questions? Call ${clinicPhone}.`;
+    message += es ? ` ¿Preguntas? Llame al ${clinicPhone}.` : ` Questions? Call ${clinicPhone}.`;
   }
 
   // Keep message under SMS limit (160 chars for single segment)
   if (message.length > 160) {
-    // Shorter version
-    message = `${greeting}thanks for calling ${clinicName}. Walk-ins welcome!`;
+    message = es
+      ? `${greeting}gracias por llamar a ${clinicName}. ¡Aceptamos pacientes sin cita!`
+      : `${greeting}thanks for calling ${clinicName}. Walk-ins welcome!`;
     if (clinicPhone) {
-      message += ` Questions: ${clinicPhone}`;
+      message += es ? ` Tel: ${clinicPhone}` : ` Questions: ${clinicPhone}`;
     }
   }
 
@@ -122,21 +202,30 @@ function generateFollowUpMessage(callData) {
  * For calls that triggered emergency detection but caller didn't hang up
  * @param {string} phoneNumber - Caller's phone number
  * @param {Object} emergencyInfo - Emergency detection info
+ * @param {string} [locale='en'] - 'en' or 'es'
  */
-async function sendEmergencyResources(phoneNumber, emergencyInfo) {
-  let message = 'If this is a medical emergency, please call 911 immediately.';
+async function sendEmergencyResources(phoneNumber, emergencyInfo, locale = 'en') {
+  const es = locale === 'es';
+  let message;
 
   // Mental health crisis specific message
   if (emergencyInfo.isMentalHealthCrisis) {
-    message = 'If you are in crisis, please call 988 (Suicide & Crisis Lifeline) or 911 for immediate help. You are not alone.';
+    message = es
+      ? 'Si está en crisis, llame al 988 (Línea de Crisis) o al 911 para obtener ayuda inmediata. No está solo/a.'
+      : 'If you are in crisis, please call 988 (Suicide & Crisis Lifeline) or 911 for immediate help. You are not alone.';
+  } else {
+    message = es
+      ? 'Si es una emergencia médica, llame al 911 de inmediato.'
+      : 'If this is a medical emergency, please call 911 immediately.';
   }
 
   try {
-    const result = await signalwireConfig.sendSms(phoneNumber, message);
+    const result = await smsProvider.sendSms(phoneNumber, message);
 
     logger.info('Emergency resources SMS sent', {
       to: phoneNumber,
-      isMentalHealth: emergencyInfo.isMentalHealthCrisis
+      isMentalHealth: emergencyInfo.isMentalHealthCrisis,
+      locale
     });
 
     return {
@@ -154,15 +243,20 @@ async function sendEmergencyResources(phoneNumber, emergencyInfo) {
 /**
  * Send clinic hours reminder
  * @param {string} phoneNumber - Recipient phone number
+ * @param {string} [locale='en'] - 'en' or 'es'
  */
-async function sendHoursReminder(phoneNumber) {
+async function sendHoursReminder(phoneNumber, locale = 'en') {
   const clinicName = process.env.CLINIC_NAME || 'Our urgent care';
   const clinicHours = process.env.CLINIC_HOURS || 'Check our website for hours';
+  const es = locale === 'es';
 
-  const message = `${clinicName} hours: ${formatClinicHours(clinicHours)}. Walk-ins always welcome!`;
+  const formattedHours = formatClinicHours(clinicHours);
+  const message = es
+    ? `Horario de ${clinicName}: ${formattedHours}. ¡Siempre aceptamos pacientes sin cita!`
+    : `${clinicName} hours: ${formattedHours}. Walk-ins always welcome!`;
 
   try {
-    const result = await signalwireConfig.sendSms(phoneNumber, message);
+    const result = await smsProvider.sendSms(phoneNumber, message);
     return { success: true, messageSid: result.messageSid };
   } catch (error) {
     logger.error('Failed to send hours reminder', { error: error.message });
@@ -210,7 +304,9 @@ function delay(ms) {
 }
 
 module.exports = {
+  sendRaw,
   sendFollowUp,
+  sendCallbackConfirmation,
   sendEmergencyResources,
   sendHoursReminder,
   generateFollowUpMessage,

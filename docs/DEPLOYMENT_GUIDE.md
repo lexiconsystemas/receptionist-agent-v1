@@ -39,8 +39,8 @@ This document provides comprehensive deployment instructions for the Receptionis
 
 | Service | Required | Purpose |
 |---------|----------|---------|
-| **RetellAI** | ✅ Required | Voice processing & AI conversation |
-| **SignalWire** | ✅ Required | Telephony & SMS services |
+| **RetellAI** | ✅ Required | Voice processing, AI conversation & telephony (PSTN) |
+| **SMS Provider** | ✅ Required | Outbound/inbound SMS (Twilio/Vonage — TBD) |
 | **Keragon** | ✅ Required | Healthcare workflow automation |
 | **Hathr.ai** | ✅ Required | Healthcare-focused LLM |
 | **Google Calendar** | Optional | Clinic hours reference |
@@ -73,13 +73,12 @@ MOCK_MODE=false
 
 #### API Credentials
 ```env
-# SignalWire Configuration
-SIGNALWIRE_PROJECT_ID=your_signalwire_project_id
-SIGNALWIRE_API_TOKEN=your_api_token_here
-SIGNALWIRE_SPACE_URL=yourspace.signalwire.com
-SIGNALWIRE_PHONE_NUMBER=+1xxxxxxxxxx
+# SMS Provider (Twilio recommended — confirm with client)
+TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+TWILIO_AUTH_TOKEN=your_twilio_auth_token
+SMS_FROM_NUMBER=+1xxxxxxxxxx
 
-# RetellAI Configuration
+# RetellAI Configuration (handles telephony + voice AI)
 RETELL_API_KEY=your_retell_api_key
 RETELL_AGENT_ID=your_agent_id
 RETELL_WEBHOOK_SECRET=your_webhook_secret

@@ -163,7 +163,7 @@ const retryWrappers = {
     initialDelayMs: 500 // Lower latency requirement
   }),
 
-  signalwire: createRetryWrapper('SignalWire', {
+  sms: createRetryWrapper('SMS', {
     maxRetries: 3,
     initialDelayMs: 1000
   }),

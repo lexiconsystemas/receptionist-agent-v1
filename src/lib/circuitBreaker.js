@@ -268,7 +268,7 @@ const circuitBreakers = {
     timeout: 15000 // Shorter timeout for voice service
   }),
 
-  signalwire: registry.get('signalwire', {
+  sms: registry.get('sms', {
     failureThreshold: 5,
     timeout: 30000
   }),
