@@ -1,29 +1,25 @@
 /**
- * SMS Provider Configuration
- * Provider-agnostic wrapper for outbound SMS.
+ * SMS Provider — Stub (Retell SMS pending)
  *
- * RetellAI now handles all telephony (inbound calls, PSTN, BAA).
- * This module handles SMS-only messaging for:
- *   - Post-call follow-up
- *   - Appointment reminders (day-before + 1-hour-before)
- *   - Rating requests and acknowledgements
- *   - Emergency resource messages
- *   - Callback confirmations
+ * RetellAI handles telephony AND outbound SMS natively.
+ * The integration approach (Retell API call vs. agent-triggered) is TBD.
  *
- * PROVIDER STATUS: TBD — Twilio or Vonage pending client confirmation.
- * When USE_MOCKS=true the mock SMS store is used instead of a real API call.
+ * This module is the single injection point for all SMS sends in:
+ *   - smsService.js (post-call follow-up, callback confirmation, emergency resources)
+ *   - schedulerService.js (appointment reminders)
+ *   - inboundSmsHandler.js (rating follow-up, opt-in/out ack)
  *
- * To wire a real provider:
- *   1. Confirm provider with client
- *   2. Install provider SDK (e.g. `npm install twilio`)
- *   3. Replace the stub block below with real SDK call
- *   4. Set env vars (see .env.example SMS section)
+ * When USE_MOCKS=true or NODE_ENV=test the mock store is used (no real API call).
+ *
+ * TODO: Once Retell SMS integration approach is confirmed, replace the real-provider
+ * stub below with the appropriate Retell API call (or remove if Retell fires SMS
+ * automatically from agent config with no server-side trigger needed).
  */
 
 const logger = require('./logger');
 
-// From-number used for all outbound SMS
-const FROM_NUMBER = process.env.SMS_FROM_NUMBER || process.env.TWILIO_PHONE_NUMBER || '+15550000000';
+// From-number used for all outbound SMS (may not be needed if Retell owns the number)
+const FROM_NUMBER = process.env.SMS_FROM_NUMBER || process.env.SIGNALWIRE_PHONE_NUMBER || '+15550000000';
 
 // Status callback URL for delivery receipts
 const STATUS_CALLBACK = process.env.APP_BASE_URL
@@ -32,14 +28,19 @@ const STATUS_CALLBACK = process.env.APP_BASE_URL
 
 /**
  * Send an SMS message
- * @param {string} to - E.164 destination number
- * @param {string} body - Message text
- * @param {Object} [opts] - Additional options
+ * @param {string} to       - E.164 destination number
+ * @param {string} body     - Message text
+ * @param {Object} [opts]   - Additional options (provider-specific)
  * @returns {Promise<{ success: boolean, messageSid?: string, status?: string }>}
  */
 async function sendSms(to, body, opts = {}) {
   if (!to || !body) {
     throw new Error('sendSms: to and body are required');
+  }
+
+  if (!process.env.SMS_ENABLED || process.env.SMS_ENABLED !== 'true') {
+    logger.info('SMS disabled — skipping send', { to });
+    return { success: false, reason: 'SMS_ENABLED is not true' };
   }
 
   // ── MOCK MODE ─────────────────────────────────────────────────────────────
@@ -50,19 +51,15 @@ async function sendSms(to, body, opts = {}) {
     return { success: true, messageSid, status: 'queued' };
   }
 
-  // ── REAL PROVIDER (stub — wire when provider confirmed) ───────────────────
-  // TODO: Replace this block with the real provider SDK call.
-  // Example for Twilio:
-  //
-  //   const twilio = require('twilio');
-  //   const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-  //   const msg = await client.messages.create({
-  //     body,
-  //     from: FROM_NUMBER,
-  //     to,
-  //     ...(STATUS_CALLBACK && { statusCallback: STATUS_CALLBACK })
-  //   });
-  //   return { success: true, messageSid: msg.sid, status: msg.status };
+  // ── REAL PROVIDER — pending Retell SMS integration confirmation ───────────
+  // TODO: Replace this block with the Retell SMS approach once confirmed.
+  // Two likely patterns:
+  //   A) Retell fires SMS automatically from agent config — no code needed here,
+  //      remove this sendSms call chain from smsService.js/schedulerService.js.
+  //   B) We call a Retell API endpoint to trigger SMS:
+  //      const retell = require('./retell');
+  //      const msg = await retell.client.sendSms({ to, body, from: FROM_NUMBER });
+  //      return { success: true, messageSid: msg.id, status: msg.status };
 
   logger.warn('SMS provider not yet configured — message not sent', { to, bodyLength: body.length });
   return { success: false, error: 'SMS provider not configured' };

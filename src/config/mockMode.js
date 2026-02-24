@@ -50,6 +50,12 @@ class ServiceFactory {
     }
   }
 
+  static getSmsProvider() {
+    // smsProvider.js handles mock/real branching internally via USE_MOCKS / NODE_ENV,
+    // so we always return the same module; no separate mock file needed.
+    return require('./smsProvider');
+  }
+
   static isMockMode() {
     return MOCK_MODE;
   }

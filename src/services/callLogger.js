@@ -15,9 +15,40 @@
 const axios = require('axios');
 const logger = require('../config/logger');
 
-const KERAGON_WEBHOOK_URL = process.env.KERAGON_WEBHOOK_URL;
 const KERAGON_API_KEY = process.env.KERAGON_API_KEY;
 const USE_MOCKS = process.env.USE_MOCKS === 'true' || process.env.NODE_ENV === 'test';
+
+// Webhook URLs for each Keragon workflow (routing by event type)
+// Workflow 1: call_ended, call_record, call_analyzed, call_started
+const KERAGON_WEBHOOK_URL = process.env.KERAGON_WEBHOOK_URL;
+// Workflow 2: emergency_detected
+const KERAGON_EMERGENCY_WEBHOOK_URL = process.env.KERAGON_EMERGENCY_WEBHOOK_URL;
+// Workflow 3: sms_sent, patient_rating, sms_opt_out, sms_opt_in, sms_freetext_reply
+const KERAGON_SMS_WEBHOOK_URL = process.env.KERAGON_SMS_WEBHOOK_URL;
+// Workflow 4: sms_failed, phi_auto_deletion, call_status_update, edge_case
+const KERAGON_EDGE_WEBHOOK_URL = process.env.KERAGON_EDGE_WEBHOOK_URL;
+
+// Event → webhook URL routing map
+const SMS_EVENTS = new Set([
+  'sms_sent', 'sms_status_update', 'patient_rating',
+  'sms_opt_out', 'sms_opt_in', 'sms_freetext_reply'
+]);
+const EDGE_EVENTS = new Set([
+  'sms_failed', 'phi_auto_deletion', 'call_status_update', 'edge_case'
+]);
+const EMERGENCY_EVENTS = new Set(['emergency_detected']);
+
+/**
+ * Select the correct Keragon webhook URL based on the event type
+ * @param {string} event - Event name
+ * @returns {string|null} Webhook URL
+ */
+function getWebhookUrlForEvent(event) {
+  if (EMERGENCY_EVENTS.has(event)) return KERAGON_EMERGENCY_WEBHOOK_URL || KERAGON_WEBHOOK_URL;
+  if (SMS_EVENTS.has(event)) return KERAGON_SMS_WEBHOOK_URL || KERAGON_WEBHOOK_URL;
+  if (EDGE_EVENTS.has(event)) return KERAGON_EDGE_WEBHOOK_URL || KERAGON_WEBHOOK_URL;
+  return KERAGON_WEBHOOK_URL; // call_ended, call_record, etc.
+}
 
 // Create axios instance for Keragon API calls
 const keragonClient = axios.create({
@@ -40,8 +71,10 @@ async function logToKeragon(data) {
     return keragonMock.mockLogToKeragon(data);
   }
 
-  if (!KERAGON_WEBHOOK_URL) {
-    logger.warn('KERAGON_WEBHOOK_URL not configured - skipping log');
+  const webhookUrl = getWebhookUrlForEvent(data.event);
+
+  if (!webhookUrl) {
+    logger.warn('No Keragon webhook URL configured for event - skipping log', { event: data.event });
     return { success: false, reason: 'Keragon not configured' };
   }
 
@@ -57,7 +90,7 @@ async function logToKeragon(data) {
       logged_at: new Date().toISOString()
     };
 
-    const response = await keragonClient.post(KERAGON_WEBHOOK_URL, payload);
+    const response = await keragonClient.post(webhookUrl, payload);
 
     logger.info('Data logged to Keragon', {
       event: data.event,

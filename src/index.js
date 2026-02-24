@@ -4,7 +4,7 @@
  *
  * Architecture:
  * Caller → RetellAI (Telephony + Voice AI) → Keragon (Automation)
- * SMS (outbound/inbound) handled by separate SMS provider (TBD — Twilio/Vonage)
+ * SMS (outbound/inbound) via SignalWire (same credentials as telephony)
  */
 
 require('dotenv').config();
@@ -136,19 +136,19 @@ app.post('/webhook/retell/status', retellHandler.handleCallStatus);
 
 // ===========================================
 // SMS WEBHOOK ENDPOINTS
-// NOTE: RetellAI handles all telephony (inbound calls, call audio, PSTN).
-// An SMS provider (Twilio/Vonage — TBD) handles outbound/inbound SMS only.
-// The inbound-sms path below will be updated to match the chosen provider's
-// webhook format once credentials are confirmed.
+// NOTE: RetellAI handles all telephony AND outbound SMS.
+// Inbound SMS replies (ratings, opt-outs) are routed here from whatever
+// number/provider Retell uses. Signature validation will be added once
+// the Retell SMS integration approach is confirmed.
 // ===========================================
 
 // SMS delivery status callback (provider-agnostic path)
 app.post('/webhook/sms/status', async (req, res) => {
   try {
     logger.info('SMS status update', {
-      messageSid: req.body.MessageSid || req.body.message_uuid,
-      status: req.body.MessageStatus || req.body.status,
-      to: req.body.To || req.body.to
+      messageSid: req.body.MessageSid || req.body.SmsSid,
+      status: req.body.MessageStatus || req.body.SmsStatus,
+      to: req.body.To
     });
     res.sendStatus(200);
   } catch (error) {
@@ -158,7 +158,6 @@ app.post('/webhook/sms/status', async (req, res) => {
 });
 
 // Inbound SMS from patients (ratings, opt-outs, free-text replies)
-// Path intentionally provider-agnostic — update SMS_WEBHOOK_URL env var accordingly
 app.post('/webhook/sms/inbound', inboundSmsHandler.handleInboundSms);
 
 // ===========================================
