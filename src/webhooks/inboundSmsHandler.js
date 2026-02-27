@@ -4,15 +4,24 @@
  *
  * Per scope requirements:
  * - Parse 1–5 rating replies
- * - Low-score (1–2) trigger: send follow-up acknowledgement SMS
+ * - Low-score (1–3) trigger: send follow-up acknowledgement SMS
  * - Handle STOP / opt-out replies (TCPA compliance)
  * - Handle free-text replies (log to Keragon for staff review)
+ *
+ * PHI Retention (§5.4/§5.7):
+ * - caller:locale:{phone} keys are set with PHI_RETENTION_DAYS TTL (default 7 days)
+ * - sms:freetext:{smsSid} bodies are cached with PHI_RETENTION_DAYS TTL;
+ *   only a sentinel reference is sent to Keragon after expiry
  */
 
 const logger = require('../config/logger');
 const callLogger = require('../services/callLogger');
 const smsService = require('../services/smsService');
 const { getCache } = require('../lib/cache');
+
+/** PHI retention window in days — must match schedulerService */
+const PHI_RETENTION_DAYS = parseInt(process.env.PHI_RETENTION_DAYS) || 7;
+const PHI_RETENTION_TTL  = PHI_RETENTION_DAYS * 24 * 60 * 60; // seconds
 
 /**
  * Main inbound SMS webhook handler
@@ -52,7 +61,7 @@ async function handleInboundSms(req, res) {
         break;
 
       case 'freetext':
-        await handleFreeText(from, body);
+        await handleFreeText(from, body, smsSid);
         break;
 
       default:
@@ -150,12 +159,12 @@ async function handleOptIn(phoneNumber) {
 
 /**
  * Handle a 1–5 rating reply
- * Low scores (1–2) trigger a follow-up acknowledgement SMS and Keragon alert
+ * Low scores (1–3) trigger a follow-up acknowledgement SMS and Keragon alert
  */
 async function handleRating(phoneNumber, score, rawBody) {
   logger.info('Rating received', { phoneNumber, score });
 
-  const isLowScore = score <= 2;
+  const isLowScore = score <= 3;
 
   // Log to Keragon
   await callLogger.logToKeragon({
@@ -192,17 +201,37 @@ async function handleRating(phoneNumber, score, rawBody) {
 
 /**
  * Handle free-text reply — log for staff review
+ *
+ * PHI retention: the raw message body is stored in Redis with a 7-day TTL
+ * (sms:freetext:{smsSid}). Only a sentinel reference is sent to Keragon
+ * so free-text PHI auto-expires from our system within the retention window.
  */
-async function handleFreeText(phoneNumber, body) {
+async function handleFreeText(phoneNumber, body, smsSid) {
   logger.info('Free-text SMS reply received — routing to staff', { phoneNumber });
 
+  const now = new Date();
+  const scrubAt = new Date(now.getTime() + PHI_RETENTION_TTL * 1000).toISOString();
+  const freetextKey = `sms:freetext:${smsSid || `${phoneNumber}:${now.getTime()}`}`;
+
+  // Cache the raw body with a 7-day TTL — auto-expires from our system
+  try {
+    const cache = getCache();
+    await cache.set(freetextKey, body, PHI_RETENTION_TTL);
+    logger.debug('Free-text body cached with retention TTL', { freetextKey, ttlDays: PHI_RETENTION_DAYS });
+  } catch (error) {
+    logger.error('Failed to cache free-text body for retention', { freetextKey, error: error.message });
+  }
+
+  // Send only a sentinel reference to Keragon — no raw PHI in the run payload
   await callLogger.logToKeragon({
     event: 'sms_freetext_reply',
     phone_number: phoneNumber,
-    message_body: body,
-    timestamp: new Date().toISOString(),
+    message_body: `[PHI — expires ${scrubAt} — see Redis key: ${freetextKey}]`,
+    freetext_cache_key: freetextKey,
+    retention_scrub_at: scrubAt,
+    timestamp: now.toISOString(),
     requires_review: true,
-    note: 'Patient replied with free text — needs staff review'
+    note: 'Patient replied with free text — needs staff review. Raw body stored in Redis with 7-day TTL.'
   });
 }
 
@@ -239,9 +268,29 @@ async function getLocaleForNumber(phoneNumber) {
   }
 }
 
+/**
+ * Set the preferred locale for a phone number
+ * Stored with PHI_RETENTION_DAYS TTL so phone-number-keyed PII auto-expires
+ * @param {string} phoneNumber - E.164 phone number
+ * @param {string} locale - 'en' | 'es'
+ * @returns {Promise<void>}
+ */
+async function setLocaleForNumber(phoneNumber, locale) {
+  try {
+    const cache = getCache();
+    // Use PHI retention TTL — phone numbers are PII and must not persist indefinitely
+    await cache.set(`caller:locale:${phoneNumber}`, locale, PHI_RETENTION_TTL);
+    logger.debug('Caller locale set with retention TTL', { phoneNumber, locale, ttlDays: PHI_RETENTION_DAYS });
+  } catch (error) {
+    logger.error('Failed to set caller locale', { phoneNumber, error: error.message });
+  }
+}
+
 module.exports = {
   handleInboundSms,
   classifyReply,
   isOptedOut,
-  getLocaleForNumber
+  getLocaleForNumber,
+  setLocaleForNumber,
+  handleFreeText
 };

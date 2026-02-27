@@ -1,4 +1,6 @@
-# Receptionist Agent V1 - Deployment Guide
+# Receptionist Agent V1 — Deployment Guide
+
+**Last updated:** 2/25/2026
 
 ## Overview
 
@@ -40,10 +42,10 @@ This document provides comprehensive deployment instructions for the Receptionis
 | Service | Required | Purpose |
 |---------|----------|---------|
 | **RetellAI** | ✅ Required | Voice processing, AI conversation & telephony (PSTN) |
-| **SMS Provider** | ✅ Required | Outbound/inbound SMS (Twilio/Vonage — TBD) |
-| **Keragon** | ✅ Required | Healthcare workflow automation |
-| **Hathr.ai** | ✅ Required | Healthcare-focused LLM |
-| **Google Calendar** | Optional | Clinic hours reference |
+| **SignalWire** | ✅ Required | Inbound/outbound SMS (`@signalwire/compatibility-api` v3.2.0) |
+| **Keragon** | ✅ Required | Healthcare workflow automation (4 live workflows) |
+| **Google Calendar** | Recommended | Staff-reference scheduling events (write-only service account) |
+| **Hathr.ai** | Stubbed | Healthcare LLM — stubbed, not active in MVP |
 
 ---
 
@@ -73,32 +75,50 @@ MOCK_MODE=false
 
 #### API Credentials
 ```env
-# SMS Provider (Twilio recommended — confirm with client)
-TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-TWILIO_AUTH_TOKEN=your_twilio_auth_token
-SMS_FROM_NUMBER=+1xxxxxxxxxx
-
 # RetellAI Configuration (handles telephony + voice AI)
 RETELL_API_KEY=your_retell_api_key
 RETELL_AGENT_ID=your_agent_id
+RETELL_LLM_ID=your_retell_llm_id
 RETELL_WEBHOOK_SECRET=your_webhook_secret
 
-# Hathr.ai Configuration
-HATHR_API_KEY=your_hathr_api_key
-HATHR_API_URL=https://api.hathr.ai/v1
-HATHR_MODEL_ID=your_model_id
+# SignalWire Configuration (SMS — NOT Twilio)
+SIGNALWIRE_PROJECT_ID=your_project_id
+SIGNALWIRE_API_TOKEN=your_api_token
+SIGNALWIRE_SPACE_URL=yourspace.signalwire.com
+SIGNALWIRE_FROM_NUMBER=+1xxxxxxxxxx
 
-# Keragon Configuration
+# Keragon Configuration — 4 workflow webhooks
 KERAGON_API_KEY=your_keragon_api_key
-KERAGON_WEBHOOK_URL=https://api.keragon.com/webhook/your_workflow_id
 KERAGON_WORKSPACE_ID=your_workspace_id
+# W1 — call_ended, call_record, call_analyzed, call_started
+KERAGON_WEBHOOK_URL=https://webhooks.us-1.keragon.com/v1/workflows/9f74dcab-6aa2-4615-8798-9a2b41290f7d/rBWs2NzSWYKwNDjU4h0Xb/signal
+# W2 — emergency_detected
+KERAGON_EMERGENCY_WEBHOOK_URL=https://webhooks.us-1.keragon.com/v1/workflows/9e1230aa-8f16-472b-8f1c-802d630c6870/MAWIR-EoI_dtStyx90d_D/signal
+# W3 — sms_sent, patient_rating, sms_opt_out, sms_opt_in, sms_freetext_reply
+KERAGON_SMS_WEBHOOK_URL=https://webhooks.us-1.keragon.com/v1/workflows/0fa3ed22-7187-470e-a3ee-db67d0ff0ec9/QDUbX18unW6JbTta1HD8U/signal
+# W4 — sms_failed, phi_auto_deletion, call_status_update, edge_case
+KERAGON_EDGE_WEBHOOK_URL=https://webhooks.us-1.keragon.com/v1/workflows/2760c73d-8d0f-4a70-a243-0e6cf2195b89/M0QohyDG1wOGlbj3dhDqR/signal
+
+# Google Calendar Configuration (service account — write-only)
+GOOGLE_CALENDAR_ID=your_calendar_id@group.calendar.google.com
+GOOGLE_SERVICE_ACCOUNT_EMAIL=your_service@project.iam.gserviceaccount.com
+GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nYOUR_KEY_HERE\n-----END PRIVATE KEY-----"
+
+# Staff alert phone for appointment change/cancel SMS
+STAFF_ALERT_PHONE=+1xxxxxxxxxx
+
+# SMS and scheduler settings
+SMS_ENABLED=true
+SCHEDULER_ENABLED=true
+PHI_RETENTION_DAYS=7
+CLINIC_TIMEZONE=America/New_York
 ```
 
 #### Clinic Configuration
 ```env
 CLINIC_NAME="Your Urgent Care Center"
 CLINIC_ADDRESS="123 Main St, City, State ZIP"
-CLINIC_PHONE=+1xxxxxxxxxx
+CLINIC_PHONE=           # Optional — add at clinic onboarding. If set, appended to post-call SMS.
 CLINIC_HOURS="MON:08:00-20:00,TUE:08:00-20:00,WED:08:00-20:00,THU:08:00-20:00,FRI:08:00-20:00,SAT:09:00-17:00,SUN:10:00-16:00"
 ```
 
@@ -689,6 +709,47 @@ kubectl get all -n receptionist-agent -o yaml > k8s-backup.yaml
 # Backup secrets
 kubectl get secrets -n receptionist-agent -o yaml > secrets-backup.yaml
 ```
+
+---
+
+## How to Disable / Shut Down the System
+
+### Full shutdown
+```bash
+docker compose down
+```
+Stops all call handling, SMS, and scheduled jobs immediately.
+
+### Disable inbound calls only (calls go unanswered)
+- **RetellAI dashboard** → Your agent → set status to **Inactive** or remove the phone number
+- Webhook server can remain running for any in-flight SMS/logging operations
+
+### Disable SMS only
+```env
+SMS_ENABLED=false
+```
+Restart server. All calls still handled and logged. No SMS sent.
+
+### Disable scheduled reminders and PHI deletion cron
+```env
+SCHEDULER_ENABLED=false
+```
+Restart server. No day-before, 1-hour-before, or PHI deletion cron will run.
+
+### Disable Google Calendar only
+Remove or blank `GOOGLE_CALENDAR_ID` from `.env` and restart.
+`isConfigured()` returns false — no calendar events created, no errors thrown.
+
+### Disable a Keragon workflow
+1. Open [app.keragon.com](https://app.keragon.com) → Workflows
+2. Open the workflow → click the **Active** toggle → set to **Inactive**
+3. Webhook calls still arrive but workflow does not process them
+
+### Emergency credential rotation
+1. Rotate the compromised key in the provider dashboard
+2. Update `.env` with the new key
+3. `docker compose restart app`
+4. Verify: `curl http://localhost:3000/health`
 
 ---
 

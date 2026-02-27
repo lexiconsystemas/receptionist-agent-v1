@@ -18,6 +18,26 @@ const logger = require('../config/logger');
 const KERAGON_API_KEY = process.env.KERAGON_API_KEY;
 const USE_MOCKS = process.env.USE_MOCKS === 'true' || process.env.NODE_ENV === 'test';
 
+/** PHI retention window in days — must match schedulerService / inboundSmsHandler */
+const PHI_RETENTION_DAYS = parseInt(process.env.PHI_RETENTION_DAYS) || 7;
+
+/**
+ * Per-workflow fields that must be anonymized or scrubbed in Keragon payloads.
+ * Keragon has no native retention API, so we enforce these rules at send time.
+ *
+ * W1 (call_log):   anonymize caller_id to last-4 digits; mark caller_name /
+ *                  reason_for_visit with a retention_scrub_at timestamp
+ * W2 (emergency):  no scrubbing — emergency records are permanently retained
+ * W3 (sms):        freetext_reply payloads handled by inboundSmsHandler (sentinel body)
+ * W4 (edge_cases): no scrubbing — phi_auto_deletion records are permanently retained
+ */
+const WORKFLOW_SCRUB_RULES = {
+  W1: { anonymizeCallerId: true, stampScrubAt: true },
+  W2: { anonymizeCallerId: false, stampScrubAt: false },
+  W3: { anonymizeCallerId: false, stampScrubAt: true },
+  W4: { anonymizeCallerId: false, stampScrubAt: false }
+};
+
 // Webhook URLs for each Keragon workflow (routing by event type)
 // Workflow 1: call_ended, call_record, call_analyzed, call_started
 const KERAGON_WEBHOOK_URL = process.env.KERAGON_WEBHOOK_URL;
@@ -34,7 +54,7 @@ const SMS_EVENTS = new Set([
   'sms_opt_out', 'sms_opt_in', 'sms_freetext_reply'
 ]);
 const EDGE_EVENTS = new Set([
-  'sms_failed', 'phi_auto_deletion', 'call_status_update', 'edge_case'
+  'sms_failed', 'phi_auto_deletion', 'phi_retention_scrub', 'call_status_update', 'edge_case'
 ]);
 const EMERGENCY_EVENTS = new Set(['emergency_detected']);
 
@@ -82,9 +102,13 @@ async function logToKeragon(data) {
     // Sanitize data before sending (no PHI beyond approved fields)
     const sanitizedData = sanitizeForLogging(data);
 
+    // Determine workflow and apply per-workflow PHI retention rules
+    const workflowKey = getWorkflowKey(data.event);
+    const retentionSanitized = sanitizeKeragonPayload(sanitizedData, workflowKey);
+
     // Add metadata
     const payload = {
-      ...sanitizedData,
+      ...retentionSanitized,
       source: 'receptionist-agent-v1',
       environment: process.env.NODE_ENV || 'development',
       logged_at: new Date().toISOString()
@@ -204,6 +228,55 @@ async function logSmsStatus(callId, smsData) {
 }
 
 /**
+ * Determine which workflow a Keragon event belongs to
+ * @param {string} event - Event name
+ * @returns {'W1'|'W2'|'W3'|'W4'}
+ */
+function getWorkflowKey(event) {
+  if (EMERGENCY_EVENTS.has(event)) return 'W2';
+  if (SMS_EVENTS.has(event))       return 'W3';
+  if (EDGE_EVENTS.has(event))      return 'W4';
+  return 'W1';
+}
+
+/**
+ * Apply per-workflow PHI retention rules to an outbound Keragon payload.
+ *
+ * Since Keragon has no retention API, we enforce field-level scrubbing at
+ * send time and stamp every applicable payload with a `retention_scrub_at`
+ * ISO timestamp. This makes each run in the Keragon Runs tab self-documenting:
+ * Arthur can filter runs older than 7 days and manually purge them.
+ *
+ * Rules applied:
+ *  - W1: caller_id anonymized to last-4 digits; retention_scrub_at stamped
+ *  - W3: retention_scrub_at stamped (freetext body sentinel handled by inboundSmsHandler)
+ *  - W2/W4: no scrubbing (permanent retention records)
+ *
+ * @param {Object} payload  - Outbound Keragon payload (already through sanitizeForLogging)
+ * @param {string} workflowKey - 'W1'|'W2'|'W3'|'W4'
+ * @returns {Object} Payload with retention fields applied
+ */
+function sanitizeKeragonPayload(payload, workflowKey) {
+  const rules = WORKFLOW_SCRUB_RULES[workflowKey] || WORKFLOW_SCRUB_RULES.W1;
+  const result = { ...payload };
+
+  // Anonymize caller_id to last-4 digits for W1 (HIPAA de-identification)
+  if (rules.anonymizeCallerId && result.caller_id) {
+    const raw = String(result.caller_id);
+    result.caller_id = raw.length > 4 ? `***${raw.slice(-4)}` : raw;
+  }
+
+  // Stamp retention_scrub_at so Arthur knows when to purge this run from Keragon
+  if (rules.stampScrubAt) {
+    const scrubAt = new Date(Date.now() + PHI_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+    result.retention_scrub_at = scrubAt.toISOString();
+    result.retention_days = PHI_RETENTION_DAYS;
+  }
+
+  return result;
+}
+
+/**
  * Sanitize data for logging - remove any unexpected PHI
  * @param {Object} data - Raw data
  * @returns {Object} Sanitized data
@@ -234,7 +307,10 @@ function sanitizeForLogging(data) {
     'card_number',
     'cvv',
     'password',
-    'pin'
+    'pin',
+    'transcript',
+    'call_transcript',
+    'summary'        // RetellAI call_analyzed summary may contain PHI narrative
   ];
 
   for (const field of prohibitedFields) {
@@ -284,5 +360,7 @@ module.exports = {
   logEdgeCase,
   logSmsStatus,
   queryCallHistory,
-  sanitizeForLogging
+  sanitizeForLogging,
+  sanitizeKeragonPayload,
+  getWorkflowKey
 };

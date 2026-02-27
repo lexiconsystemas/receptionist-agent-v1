@@ -192,6 +192,19 @@ function detectEmergency(callData) {
   };
 }
 
+/**
+ * Strip transcript/summary from a callData or log object before sending to Keragon.
+ * Call this AFTER emergency detection has already run against the full callData in memory.
+ * Returns a new object — never mutates the original.
+ * @param {Object} obj - callData or any log payload
+ * @returns {Object} Copy with transcript, call_transcript, and summary removed
+ */
+function scrubTranscriptForLogging(obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  const { transcript, call_transcript, summary, ...rest } = obj; // eslint-disable-line no-unused-vars
+  return rest;
+}
+
 module.exports = {
   retellClient,
   validateWebhookSignature,
@@ -199,6 +212,7 @@ module.exports = {
   getCallTranscript,
   listCalls,
   parseCallEvent,
+  scrubTranscriptForLogging,
   detectEmergency,
   RETELL_AGENT_ID
 };

@@ -56,6 +56,13 @@ class ServiceFactory {
     return require('./smsProvider');
   }
 
+  static getGoogleCalendarService() {
+    // googleCalendarService.js handles mock/real branching internally via USE_MOCKS / NODE_ENV,
+    // so we always return the same module; no separate require needed for consumers.
+    // This factory method exists for consistency and discoverability.
+    return require('../services/googleCalendarService');
+  }
+
   static isMockMode() {
     return MOCK_MODE;
   }

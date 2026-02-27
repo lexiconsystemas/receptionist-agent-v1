@@ -6,6 +6,7 @@
 |---------|------|--------|---------------|
 | 1.0 | 2026-01-25 | Compliance Team | Approved |
 | 1.1 | 2026-01-26 | Legal Counsel | Reviewed |
+| 1.2 | 2026-02-25 | Dev Team | Updated — PHI auto-deletion, rating SMS, Calendar data note, BAA status |
 
 ---
 
@@ -48,11 +49,13 @@ This document outlines the compliance framework for the Receptionist Agent V1 sy
 ### Data Flow Classification
 
 ```
-Incoming Call → Voice Processing → AI Analysis → Structured Logging
-     ↓               ↓                ↓              ↓
-   Caller ID      Transcript      Extracted Data    Keragon Logs
-   (PHI)          (Temporary)      (Filtered PHI)   (Secure Storage)
+Incoming Call → Voice Processing → AI Analysis → Structured Logging → Google Calendar
+     ↓               ↓                ↓              ↓                     ↓
+   Caller ID      Transcript      Extracted Data    Keragon Logs      Walk-in Event
+   (PHI)          (Temporary)      (Filtered PHI)   (Secure Storage)  (Limited PHI)
 ```
+
+**Google Calendar Data Note:** When a patient books a soft-scheduled appointment, the system writes a 1-hour Google Calendar event containing: patient name, phone number, reason for visit (non-diagnostic), patient type (new/returning), and call ID. This event is visible to all staff with access to the clinic's shared Google Calendar. Data classification: **PHI (Minimal)**. Access should be restricted to clinic staff only. A BAA with Google is required before production use.
 
 ### Data Minimization Policy
 
@@ -109,6 +112,27 @@ Incoming Call → Voice Processing → AI Analysis → Structured Logging
 - **Backup Media**: Encrypted, stored in secure off-site location
 
 ### Technical Safeguards
+
+#### RetellAI Data Storage Controls
+
+The live RetellAI agent is configured via `scripts/update-retell-agent.js` with:
+
+- **`data_storage_setting: "basic_attributes_only"`** — RetellAI does **not** store call transcripts, recordings, or call logs on their platform. Only basic call metadata (call ID, duration, timestamps, status) is retained. This eliminates the primary third-party PHI storage risk.
+- **`data_storage_retention_days: 7`** — Even basic call metadata is auto-deleted from RetellAI after 7 days, matching the system-wide `PHI_RETENTION_DAYS` policy.
+- **Transcript/summary stripping** — `transcript`, `call_transcript`, and `summary` fields are in the `prohibitedFields` list in `sanitizeForLogging()` (`src/services/callLogger.js`) and stripped by `scrubTranscriptForLogging()` (`src/config/retell.js`) before any Keragon logging. Emergency detection runs in-memory against the full transcript *before* any Keragon call — sequencing is preserved.
+
+> ⚠️ **Arthur action required:** A BAA with RetellAI must be signed before production go-live. Even with `basic_attributes_only`, RetellAI processes audio in real-time and is a Business Associate under HIPAA. Contact RetellAI at [retellai.com](https://www.retellai.com) to obtain the BAA.
+>
+> **Optional belt-and-suspenders:** Enable PII redaction in the RetellAI dashboard (Settings → Privacy → PII Redaction) to auto-scrub names, phone numbers, DOBs from any data that does get stored. This guards against any future storage default changes.
+
+To verify the live agent settings at any time:
+```bash
+curl -s -H "Authorization: Bearer $RETELL_API_KEY" \
+  https://api.retellai.com/get-agent/$RETELL_AGENT_ID \
+  | node -e "const p=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')); \
+    console.log('storage:', p.data_storage_setting, '| days:', p.data_storage_retention_days)"
+# Expected: storage: basic_attributes_only | days: 7
+```
 
 #### Access Control
 ```yaml
@@ -208,10 +232,15 @@ function sanitizePHI(text) {
 #### Data Retention Policy
 | Data Type | Retention Period | Disposal Method |
 |-----------|------------------|-----------------|
-| Call Transcripts | 30 days | Secure deletion |
-| Call Logs | 365 days | Secure deletion |
+| **Call PHI (Redis cache)** | **7 days — auto-deleted by cron** | Automatic secure deletion via `phi_deletion` cron (runs daily at 2:00 AM) |
+| Call Transcripts (RetellAI) | **0 days — not stored** (`data_storage_setting: basic_attributes_only`) | Not retained by RetellAI; basic call metadata auto-deleted after 7 days via `data_storage_retention_days` |
+| Call Logs (Keragon) | Per Keragon data policy | Managed by Keragon per BAA |
+| Google Calendar Events | Staff-managed (soft-scheduled appointments) | Manual deletion by clinic staff |
+| SMS Opt-Out Flags (Redis) | 1 year (rolling) | Auto-expires; re-set on new opt-out |
 | Audit Logs | 7 years | Secure archive |
 | System Logs | 90 days | Secure deletion |
+
+**PHI Auto-Deletion (implemented):** A cron job in `src/services/schedulerService.js` runs daily at 2:00 AM and deletes all call records older than `PHI_RETENTION_DAYS` (default: 7) from Redis. Each deletion batch is logged to Keragon W4 as a `phi_auto_deletion` event for audit purposes.
 
 ---
 
@@ -252,22 +281,30 @@ data_collection:
 ```json
 {
   "consent": {
-    "implied_consent": {
-      "trigger": "call_duration > 30_seconds",
-      "actions": ["sms_followup", "call_logging"]
+    "call_logging": {
+      "basis": "legitimate_interest",
+      "trigger": "inbound call received",
+      "note": "Calls are logged for operational continuity"
     },
-    "explicit_consent": {
-      "required_for": ["marketing", "research"],
-      "method": "verbal_confirmation"
+    "sms_followup": {
+      "basis": "explicit_consent",
+      "trigger": "sms_consent_explicit === true in call extracted_data",
+      "note": "RetellAI agent must ask for verbal consent before sending any SMS"
     }
   }
 }
 ```
 
+> **Note (v1.2):** Post-call SMS follow-up is gated on `sms_consent_explicit: true` from the RetellAI call flow. The AI agent must obtain explicit verbal consent during the call. Implied consent is **not** used for SMS. This aligns with TCPA requirements.
+
 #### Opt-Out Mechanisms
-- **SMS Opt-Out**: Reply STOP to unsubscribe
-- **Call Opt-Out**: Request removal during call
-- **Email Opt-Out**: Unsubscribe link in communications
+- **SMS Opt-Out**: Reply STOP, CANCEL, END, QUIT, or UNSUBSCRIBE — handled automatically by `inboundSmsHandler.js`, flagged in Redis, logged to Keragon W3. No confirmation SMS is sent (TCPA-compliant).
+- **SMS Opt-In**: Reply START, YES, or UNSTOP — removes opt-out flag. Handled automatically.
+- **Call Opt-Out**: Patient may request removal during the call — AI agent can flag this.
+- **Email Opt-Out**: Unsubscribe link in any email communications.
+
+#### Rating SMS Privacy Note
+When patients reply to a post-call follow-up SMS with a 1–5 rating, their phone number and rating score are logged to Keragon W3. For scores ≤2, a `low_score_alert: true` flag is set and a staff email alert may be triggered. The patient's reply body is stored only in Keragon for staff review — it is not stored in Redis or local logs beyond the standard log retention period. Free-text replies are logged to Keragon W3 with `requires_review: true` and are not processed by AI or further distributed.
 
 ---
 
@@ -344,20 +381,23 @@ authorization:
 ```yaml
 compliance_checks:
   daily:
+    - phi_auto_deletion: "Redis call records > PHI_RETENTION_DAYS (default: 7) deleted at 2:00 AM — logged to Keragon W4"
     - access_review: "unusual access patterns"
     - data_classification: "PHI detection"
     - encryption_status: "data protection"
-  
+
   weekly:
     - user_access: "privilege review"
     - patch_status: "security updates"
     - backup_verification: "data recovery"
-  
+
   monthly:
     - risk_assessment: "threat analysis"
     - policy_review: "compliance updates"
     - training_audit: "staff compliance"
 ```
+
+**PHI Auto-Deletion Audit Trail:** Each time the PHI deletion cron runs, it logs a `phi_auto_deletion` event to Keragon W4 (`receptionist_edge_cases` workflow) with the count of records deleted and the timestamp. This provides an auditable record of data disposal for compliance review.
 
 #### Alerting Rules
 ```yaml
@@ -416,13 +456,16 @@ alerts:
 - [ ] Data breach notification procedures
 
 #### Approved Vendors
-| Vendor | Service | BAA Status | Last Review |
-|--------|---------|------------|-------------|
-| **RetellAI** | Voice Processing | In Progress | 2026-01-25 |
-| **SignalWire** | Telephony | Signed | 2026-01-15 |
-| **Keragon** | Workflow Automation | In Progress | 2026-01-25 |
-| **Hathr.ai** | AI Processing | In Progress | 2026-01-25 |
-| **AWS** | Cloud Infrastructure | Signed | 2026-01-01 |
+| Vendor | Service | BAA Status | Notes |
+|--------|---------|------------|-------|
+| **RetellAI** | Voice Processing | **Pending — Arthur to obtain** | `data_storage_setting: basic_attributes_only` — no transcripts or recordings stored. `data_storage_retention_days: 7` — basic metadata auto-deleted. BAA required before go-live. |
+| **SignalWire** | Telephony + SMS | **Pending — Arthur to obtain** | Handles call routing and SMS delivery |
+| **Keragon** | Workflow Automation + Logging | **Pending — Arthur to obtain** | Receives call logs, SMS events, emergencies |
+| **Google** | Calendar (service account) | **Pending — Arthur to obtain** | Stores limited PHI (name, phone, reason) as calendar events |
+| **Hathr.ai** | Healthcare LLM | N/A — not implemented (stubbed) | No data is sent to Hathr.ai in production |
+| **AWS / Cloud Provider** | Infrastructure | Signed (obtain from hosting provider) | Underlying infrastructure BAA |
+
+> ⚠️ **Action Required (Arthur):** BAAs with RetellAI, SignalWire, Keragon, and Google (Workspace/Calendar) must be executed before production go-live. These vendors process or receive data that may include PHI.
 
 ### Data Processing Agreements
 
@@ -685,7 +728,7 @@ review_schedule:
 - **Approval**: Chief Privacy Officer
 - **Distribution**: All Staff, Management, Legal Counsel
 
-**Next Review Date**: April 25, 2026
+**Next Review Date**: May 25, 2026
 
 **Contact Information**
 - **Compliance Office**: compliance@yourclinic.com

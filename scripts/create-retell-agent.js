@@ -100,9 +100,25 @@ function retellRequest(method, endpoint, body) {
 async function main() {
   console.log('=== RetellAI Agent Setup ===\n');
 
-  // Step 1: Use already-created LLM (created in previous run)
-  const llmId = 'llm_eb106b7398e0387b36ba8626a62a';
-  console.log(`Step 1: Using existing LLM: ${llmId}\n`);
+  // Step 1: Create LLM with Claude model
+  console.log('Step 1: Creating Retell LLM with Claude Sonnet 4.5...');
+  const llmPayload = {
+    model: 'claude-4.5-sonnet',
+    general_prompt: prompt,
+    general_tools: allTools,
+    begin_message: '',   // Greeting is driven by the prompt steps, not a fixed begin_message
+    start_speaker: 'agent',
+  };
+
+  const llmRes = await retellRequest('POST', '/create-retell-llm', llmPayload);
+
+  if (llmRes.status !== 201 && llmRes.status !== 200) {
+    console.error('❌ Failed to create LLM:', JSON.stringify(llmRes.body, null, 2));
+    process.exit(1);
+  }
+
+  const llmId = llmRes.body.llm_id;
+  console.log(`✅ LLM created (Claude Sonnet 4.5): ${llmId}\n`);
 
   // Step 2: Create the Agent
   console.log('Step 2: Creating Retell Agent...');
@@ -114,8 +130,8 @@ async function main() {
     },
     voice_id: 'openai-Nova', // OpenAI Nova — professional American female, clean for healthcare
     language: 'en-US',
-    ambient_sound: 'call-center',
-    ambient_sound_volume: 0.5,
+    ambient_sound: null,         // No background noise — cleaner, more appropriate for medical context
+    ambient_sound_volume: 0,
     responsiveness: 1.0,
     interruption_sensitivity: 1.0,
     enable_backchannel: true,
@@ -128,6 +144,15 @@ async function main() {
     enable_voicemail_detection: true,
     voicemail_message: "Hi, you've reached Demo Urgent Care's after-hours AI receptionist. Please call back when you're available, or visit us during business hours. No appointment needed — walk-ins always welcome.",
     post_call_analysis_data: [],
+
+    // HIPAA: Do not store transcripts or recordings on RetellAI's platform.
+    // 'basic_attributes_only' = only call metadata (id, duration, timestamps, status) retained.
+    // Replaces the deprecated opt_out_sensitive_data_storage boolean (removed Feb 2025).
+    data_storage_setting: 'basic_attributes_only',
+
+    // Auto-delete even basic call metadata from RetellAI after 7 days (matches PHI_RETENTION_DAYS).
+    data_storage_retention_days: 7,
+
     // webhook_url omitted — will be set after deploy via update-retell-webhook.js
   };
 

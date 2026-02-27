@@ -88,15 +88,14 @@ Detailed technical architecture documentation including system design and data f
 - Integration patterns
 - Scalability considerations
 
-### 📋 [API Integration Plan](./API_INTEGRATION_PLAN.md)
-Strategic plan for API integration and testing when external services become available.
+### 📋 [Implementation Status](./API_INTEGRATION_PLAN.md)
+Current build status for all integrations, remaining items before acceptance, and the access map required before final payment (§6).
 
 **Key Sections:**
-- Current implementation status
-- Testing strategies
-- Integration timeline
-- Risk assessment
-- Success criteria
+- Per-integration status (RetellAI, SignalWire, Keragon, Google Calendar, Scheduler)
+- What still needs client credentials
+- Remaining items before walkthrough and acceptance
+- Access map (§6 — required before final payment)
 
 ---
 
@@ -158,19 +157,33 @@ NODE_ENV=production
 PORT=3000
 MOCK_MODE=false
 
-# API Credentials
+# RetellAI (voice + telephony)
+RETELL_API_KEY=your_retell_api_key
+RETELL_AGENT_ID=your_agent_id
+RETELL_WEBHOOK_SECRET=your_webhook_secret
+
+# SignalWire (SMS — NOT Twilio)
 SIGNALWIRE_PROJECT_ID=your_signalwire_project_id
 SIGNALWIRE_API_TOKEN=your_api_token
 SIGNALWIRE_SPACE_URL=yourspace.signalwire.com
-SIGNALWIRE_PHONE_NUMBER=+1xxxxxxxxxx
-RETELL_API_KEY=your_retell_api_key
-KERAGON_API_KEY=your_keragon_api_key
-HATHR_API_KEY=your_hathr_api_key
+SIGNALWIRE_FROM_NUMBER=+1xxxxxxxxxx
+
+# Keragon — 4 live workflow webhooks
+KERAGON_WEBHOOK_URL=https://webhooks.us-1.keragon.com/v1/workflows/9f74dcab-.../signal
+KERAGON_EMERGENCY_WEBHOOK_URL=https://webhooks.us-1.keragon.com/v1/workflows/9e1230aa-.../signal
+KERAGON_SMS_WEBHOOK_URL=https://webhooks.us-1.keragon.com/v1/workflows/0fa3ed22-.../signal
+KERAGON_EDGE_WEBHOOK_URL=https://webhooks.us-1.keragon.com/v1/workflows/2760c73d-.../signal
+
+# Google Calendar (service account — write-only)
+GOOGLE_CALENDAR_ID=your_calendar_id@group.calendar.google.com
+GOOGLE_SERVICE_ACCOUNT_EMAIL=your_service@project.iam.gserviceaccount.com
+GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nYOUR_KEY\n-----END PRIVATE KEY-----"
 
 # Clinic Information
 CLINIC_NAME="Your Urgent Care"
 CLINIC_ADDRESS="123 Main St, City, State"
-CLINIC_PHONE=+1xxxxxxxxxx
+CLINIC_PHONE=           # Optional — add at clinic onboarding. Omit for demo MVP.
+CLINIC_TIMEZONE=America/New_York
 ```
 
 #### Optional Configuration
@@ -184,7 +197,12 @@ RATE_LIMIT_MAX_REQUESTS=100
 
 # Features
 SMS_ENABLED=true
+SCHEDULER_ENABLED=true
+PHI_RETENTION_DAYS=7
 SMS_FOLLOWUP_DELAY_MINUTES=5
+
+# Staff alert for appointment change/cancel
+STAFF_ALERT_PHONE=+1xxxxxxxxxx
 ```
 
 ---
@@ -209,9 +227,7 @@ npm run test:coverage
 
 ### Test Results Summary
 
-- **Unit Tests**: 29/29 passing ✅
-- **Integration Tests**: 14/14 passing ✅
-- **Mock Integration**: Full flow working ✅
+- **Total**: 143/143 passing ✅ (as of 2/25/2026)
 - **Coverage**: 95%+ for critical business logic ✅
 
 ---
@@ -377,15 +393,21 @@ USE_MOCKS=true
 
 ## 📈 Roadmap
 
-### Current Version: v1.0
+### Current Version: v1.0 (2/25/2026)
 
-**Features:**
-- ✅ After-hours call handling
-- ✅ Emergency detection and routing
-- ✅ Spam call filtering
-- ✅ SMS follow-up messaging
-- ✅ Call logging and analytics
-- ✅ HIPAA-conscious design
+**Features — All Implemented:**
+- ✅ After-hours call handling (RetellAI — live and tested)
+- ✅ Emergency detection and 911 routing (20+ keyword categories)
+- ✅ Spam call filtering (multi-factor scoring)
+- ✅ Soft scheduling — 1-hour windows logged to Google Calendar
+- ✅ Appointment change / cancel flow (cancel reminder + SMS staff alert)
+- ✅ SMS follow-up messaging (consent-gated, bilingual EN/ES)
+- ✅ Day-before + 1-hour-before appointment SMS reminders (cron-based)
+- ✅ Rating SMS (1–5 scale, low-score follow-up ≤3)
+- ✅ Keragon logging — 4 live workflows (call logs, emergencies, SMS events, edge cases)
+- ✅ Staff email alerts via SendGrid (low ratings, SMS failures, freetext replies)
+- ✅ PHI auto-deletion — 7-day cron, HIPAA-conscious
+- ✅ HIPAA-conscious design with field sanitization
 
 ### Planned Enhancements
 
@@ -447,9 +469,8 @@ This software is licensed under the **UNLICENSED** proprietary license agreement
 
 ---
 
-**Last Updated**: January 25, 2026  
-**Document Version**: 1.0  
-**Next Review**: February 25, 2026
+**Last Updated**: February 25, 2026
+**Document Version**: 2.0
 
 ---
 

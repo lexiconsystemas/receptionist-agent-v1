@@ -139,17 +139,17 @@ describe('smsService — generateFollowUpMessage', () => {
     expect(msg.toLowerCase()).toMatch(/pacientes|cita/);
   });
 
-  test('includes caller name when provided', () => {
+  test('does not include caller name (PHI-free design)', () => {
     const msg = generateFollowUpMessage(makeCallData({ caller_name: 'Maria' }), 'en');
-    expect(msg).toContain('Maria');
+    expect(msg).not.toContain('Maria');
   });
 
-  test('includes visit timeframe when provided', () => {
+  test('does not include visit timeframe (PHI-free design)', () => {
     const msg = generateFollowUpMessage(
       makeCallData({ intended_visit_timeframe: 'tomorrow at 3pm' }),
       'en'
     );
-    expect(msg).toContain('tomorrow at 3pm');
+    expect(msg).not.toContain('tomorrow at 3pm');
   });
 
   test('includes clinic address when set', () => {
@@ -158,10 +158,10 @@ describe('smsService — generateFollowUpMessage', () => {
     expect(msg).toContain('123 Main St');
   });
 
-  test('includes clinic phone when set', () => {
-    process.env.CLINIC_PHONE = '+19995551234';
+  test('includes rating request and opt-out', () => {
     const msg = generateFollowUpMessage(makeCallData(), 'en');
-    expect(msg).toContain('+19995551234');
+    expect(msg).toContain('Reply STOP');
+    expect(msg.toLowerCase()).toMatch(/rate|reply 1/i);
   });
 
   test('keeps message under 160 chars when all env vars set', () => {

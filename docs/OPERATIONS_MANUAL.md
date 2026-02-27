@@ -1,714 +1,624 @@
-# Receptionist Agent V1 - Operations Manual
+# Receptionist Agent V1 — Operations Manual
 
-## Document Control
-
-| Version | Date | Author | Changes |
-|---------|------|--------|---------|
-| 1.0 | 2026-01-25 | DevOps Team | Initial Release |
-| 1.1 | 2026-01-26 | Operations | Added troubleshooting procedures |
+**Last updated:** 2/25/2026
+**Version:** 2.0 — Updated for SignalWire, Google Calendar, 4 Keragon workflows, scheduler
 
 ---
-
-## Executive Summary
-
-The Receptionist Agent V1 is an enterprise-grade AI-powered after-hours receptionist system designed for urgent care facilities. This manual provides comprehensive operational procedures for system administration, monitoring, and maintenance.
 
 ## System Overview
 
 ### Architecture Components
 
-- **Application Layer**: Node.js/Express server with business logic
-- **Voice Processing**: RetellAI integration for speech recognition and synthesis
-- **AI Intelligence**: Hathr.ai healthcare-focused LLM for conversation management
-- **Telephony**: RetellAI for all inbound/outbound calls (PSTN + HIPAA BAA included)
-- **SMS**: Separate SMS provider (TBD — Twilio/Vonage) for outbound/inbound SMS only
-- **Automation**: Keragon for healthcare workflow orchestration
-- **Caching**: Redis for session management and scalability
-- **Monitoring**: Comprehensive health checks and logging
+| Component | Technology | Role |
+|-----------|------------|------|
+| **Voice + Telephony** | RetellAI | STT/TTS, PSTN, multi-call concurrency |
+| **SMS** | SignalWire (`@signalwire/compatibility-api` v3.2.0) | Inbound/outbound SMS |
+| **Automation & Logging** | Keragon (4 live workflows) | Workflow orchestration, staff email alerts |
+| **Calendar** | Google Calendar (service account) | Staff-reference scheduling events |
+| **Scheduler** | node-cron (in-process) | SMS reminders + PHI auto-deletion |
+| **Backend** | Node.js 18 / Express | Webhook handling, business logic |
+| **Cache** | Redis (ioredis) | Appointment store, reminder state |
 
 ### Service Dependencies
 
-| Service | Criticality | SLA | Fallback |
-|---------|-------------|-----|----------|
-| **RetellAI** | Critical | 99.9% | Mock mode (telephony + voice) |
-| **SMS Provider** | High | 99.5% | Error handling (SMS only) |
-| **Keragon** | High | 99.5% | Local logging |
-| **Hathr.ai** | Critical | 99.9% | Basic responses |
-| **Redis** | High | 99.5% | In-memory fallback |
+| Service | Criticality | Fallback |
+|---------|-------------|----------|
+| **RetellAI** | Critical | Mock mode (dev/test only) |
+| **SignalWire** | High | Calls still logged; SMS queued/dropped |
+| **Keragon** | High | Errors logged locally; non-fatal |
+| **Google Calendar** | Low | Non-fatal; call flow continues without it |
+| **Redis** | High | In-memory cache fallback (limited) |
+
+### Keragon Workflows (Live)
+
+| ID | Name | Webhook URL |
+|----|------|-------------|
+| **W1** | `receptionist_call_log` | `https://webhooks.us-1.keragon.com/v1/workflows/9f74dcab-6aa2-4615-8798-9a2b41290f7d/rBWs2NzSWYKwNDjU4h0Xb/signal` |
+| **W2** | `receptionist_emergency_alert` | `https://webhooks.us-1.keragon.com/v1/workflows/9e1230aa-8f16-472b-8f1c-802d630c6870/MAWIR-EoI_dtStyx90d_D/signal` |
+| **W3** | `receptionist_sms_events` | `https://webhooks.us-1.keragon.com/v1/workflows/0fa3ed22-7187-470e-a3ee-db67d0ff0ec9/QDUbX18unW6JbTta1HD8U/signal` |
+| **W4** | `receptionist_edge_cases` | `https://webhooks.us-1.keragon.com/v1/workflows/2760c73d-8d0f-4a70-a243-0e6cf2195b89/M0QohyDG1wOGlbj3dhDqR/signal` |
 
 ---
 
-## Standard Operating Procedures (SOPs)
+## Day-to-Day Usage Guide
+
+### What runs automatically (no daily action needed)
+
+Once the server is running and credentials are configured, the following are fully automated:
+
+- **Inbound calls** — RetellAI answers, runs the call flow, fires webhooks to the server
+- **Call logging** — Every call logged to Keragon W1 automatically
+- **Emergency alerts** — Emergency calls trigger W2 instantly during the call
+- **Post-call SMS** — Sent within seconds of call end (consent-gated)
+- **Rating SMS** — Fired if patient opts in; low-score follow-up automatic
+- **Staff email alerts** — Fired via Keragon W3 (low ratings, freetext replies) and W4 (SMS failures)
+- **Appointment reminders** — Day-before and 1-hour-before SMS fire via cron automatically
+- **PHI deletion** — Runs at 2:00 AM daily automatically
+
+### What staff need to check each morning
+
+1. **Keragon W1 run history** — Review overnight calls. Look for any `requires_review: true` records.
+2. **Keragon W2 run history** — Check for any `emergency_detected` events from overnight.
+3. **Keragon W4 run history** — Check for `edge_case` records (appointment changes/cancels, SMS failures).
+4. **Google Calendar** — Check for overnight walk-in intent events (1-hour blocks added by the system).
+5. **Staff alert SMS** — If `STAFF_ALERT_PHONE` received any appointment cancel/change alerts, action those.
+6. **SendGrid email inbox** — Low rating alerts and SMS delivery failure emails from Keragon workflows.
+
+### How to review call logs in Keragon
+
+1. Log in to [app.keragon.com](https://app.keragon.com)
+2. Navigate to **Workflows** → `receptionist_call_log` (W1)
+3. Click **Runs** tab on the left
+4. Each run shows the call payload: caller name, phone, reason, timeframe, disposition, spam flags, SMS status
+5. Filter by date range for specific days
+6. For emergency events: open **W2** (`receptionist_emergency_alert`) → Runs
+
+### How to access appointment change/cancel alerts
+
+- **SMS:** Check `STAFF_ALERT_PHONE` for messages starting with `[Receptionist Alert]`
+- **Keragon:** Open **W4** (`receptionist_edge_cases`) → Runs → look for `edge_case_type: appointment_cancel` or `appointment_change`
+
+---
+
+## Standard Operating Procedures
 
 ### SOP-001: System Startup
 
-#### Purpose
-To ensure proper system initialization and service availability.
+**Pre-startup checks:**
+```bash
+# Verify environment variables are set
+grep -E "(RETELL_API_KEY|SIGNALWIRE|KERAGON_WEBHOOK|GOOGLE_CALENDAR|STAFF_ALERT)" .env
 
-#### Responsibility
-- **Primary**: DevOps Engineer
-- **Secondary**: System Administrator
+# Check Redis connectivity
+redis-cli -h localhost -p 6379 ping
 
-#### Procedure
+# Confirm SSL certificates (production)
+openssl x509 -in /path/to/cert.crt -noout -dates
+```
 
-1. **Pre-Startup Checks**
-   ```bash
-   # Verify environment configuration
-   cat .env | grep -E "(TWILIO|SMS|RETELL|KERAGON|HATHR)"
-   
-   # Check Redis connectivity
-   redis-cli -h localhost -p 6379 ping
-   
-   # Validate SSL certificates
-   openssl x509 -in /path/to/cert.crt -text -noout
-   ```
+**Start the server:**
+```bash
+# Docker Compose (recommended)
+docker compose up -d redis
+docker compose up -d app
 
-2. **Service Startup**
-   ```bash
-   # Start Redis (if not running)
-   docker-compose up -d redis
-   
-   # Start application
-   docker-compose up -d app
-   
-   # Verify health status
-   curl http://localhost:3000/health
-   ```
+# Verify startup
+curl http://localhost:3000/health
+```
 
-3. **Post-Startup Validation**
-   ```bash
-   # Check all services
-   docker-compose ps
-   
-   # Verify API connectivity
-   curl -H "Authorization: Bearer $RETELL_API_KEY" \
-        https://api.retellai.com/agents/$RETELL_AGENT_ID
-   
-   # Test webhook endpoints
-   curl -X POST http://localhost:3000/webhook/retell \
-        -H "Content-Type: application/json" \
-        -d '{"event_type":"test"}'
-   ```
+**Post-startup validation:**
+```bash
+# Full health check
+curl http://localhost:3000/health/detailed
 
-#### Success Criteria
-- All services show "healthy" status
-- API endpoints respond within 2 seconds
-- Webhook endpoints accept test requests
-- No error messages in logs
+# Verify RetellAI agent is reachable
+curl -H "Authorization: Bearer $RETELL_API_KEY" \
+     https://api.retellai.com/v2/agents/$RETELL_AGENT_ID
+
+# Test webhook endpoints accept requests
+curl -X POST http://localhost:3000/webhook/retell \
+     -H "Content-Type: application/json" \
+     -d '{"event_type":"test"}'
+```
+
+**Success criteria:**
+- `/health` returns `status: healthy`
+- All 3 service checks (server, redis, filesystem) are healthy
+- No ERROR lines in recent logs
+- Scheduler started (look for "Scheduler started" in logs)
 
 ---
 
 ### SOP-002: Health Monitoring
 
-#### Purpose
-To maintain system health and proactively identify issues.
-
-#### Responsibility
-- **Primary**: Operations Team
-- **Secondary**: On-call Engineer
-
-#### Monitoring Checklist
-
-**Hourly Checks**
-- [ ] Application health endpoint: `GET /health`
+**Hourly checks:**
+- [ ] `GET /health` — overall status
+- [ ] `GET /health/detailed` — per-component status
 - [ ] Redis connectivity: `redis-cli ping`
-- [ ] Error rate: <1% of total requests
-- [ ] Response time: <2 seconds average
-- [ ] Memory usage: <80% of allocated
+- [ ] Error rate below 1%
+- [ ] Response time below 2 seconds
 
-**Daily Checks**
-- [ ] Log review for critical errors
-- [ ] API quota utilization
-- [ ] Backup completion status
-- [ ] Security scan results
-- [ ] Performance trend analysis
+**Daily checks:**
+- [ ] Review `docker compose logs app | grep ERROR` for overnight errors
+- [ ] Check Keragon W4 for `sms_failed` events
+- [ ] Verify PHI deletion cron ran at 2:00 AM (check logs or Keragon W4 `phi_auto_deletion` runs)
+- [ ] Confirm appointment reminder SMS sent correctly (check Keragon W3 `sms_sent` runs)
+- [ ] Review Google Calendar for overnight booking events
 
-**Weekly Checks**
-- [ ] Capacity planning review
-- [ ] Dependency security updates
-- [ ] Disaster recovery test
-- [ ] Documentation updates
+**Health endpoint reference:**
+```bash
+# Quick status
+curl http://localhost:3000/health
 
-#### Health Endpoint Responses
+# Kubernetes probes
+curl http://localhost:3000/health/live    # liveness
+curl http://localhost:3000/health/ready   # readiness
 
+# Full component detail
+curl http://localhost:3000/health/detailed
+```
+
+Expected healthy response:
 ```json
-// Healthy Response
 {
   "status": "healthy",
-  "timestamp": "2026-01-25T23:45:00.000Z",
+  "timestamp": "2026-02-25T10:00:00.000Z",
   "checks": {
     "server": { "status": "healthy", "uptime": 86400 },
     "redis": { "status": "healthy", "latency": 2 },
-    "filesystem": { "status": "healthy", "accessible": true }
-  },
-  "summary": {
-    "total": 3,
-    "healthy": 3,
-    "unhealthy": 0,
-    "critical": 0
-  }
-}
-
-// Degraded Response
-{
-  "status": "degraded",
-  "timestamp": "2026-01-25T23:45:00.000Z",
-  "checks": {
-    "server": { "status": "healthy", "uptime": 86400 },
-    "redis": { "status": "unhealthy", "error": "Connection timeout" },
-    "filesystem": { "status": "healthy", "accessible": true }
-  },
-  "summary": {
-    "total": 3,
-    "healthy": 2,
-    "unhealthy": 1,
-    "critical": 0
+    "filesystem": { "status": "healthy" }
   }
 }
 ```
+
+**Checking the scheduler is running:**
+```bash
+# Look for cron job startup confirmation in logs
+docker compose logs app | grep "Scheduler started"
+# Should show: reminderInterval, phiDeletion, timezone
+
+# Verify PHI deletion ran this morning
+docker compose logs app | grep "PHI auto-deletion job complete"
+```
+
+**Checking Keragon workflow health:**
+- Open [app.keragon.com](https://app.keragon.com) → Workflows
+- Each workflow should show status **Active** (green)
+- Click any workflow → Runs → verify recent runs are appearing
+- If a workflow shows **Inactive**, re-activate it by clicking the status toggle
 
 ---
 
 ### SOP-003: Incident Response
 
-#### Purpose
-To provide structured response to system incidents and outages.
+**Severity levels:**
 
-#### Incident Severity Levels
+| Severity | Definition | Response Time |
+|----------|------------|---------------|
+| **SEV-0** | Complete outage — no calls answered | 15 minutes |
+| **SEV-1** | Calls answered but logging/SMS broken | 1 hour |
+| **SEV-2** | Degraded performance or partial feature failure | 4 hours |
+| **SEV-3** | Non-critical issues (slow reminders, Keragon delay) | 24 hours |
 
-| Severity | Definition | Response Time | Escalation |
-|----------|------------|----------------|------------|
-| **SEV-0** | Complete system outage | 15 minutes | Executive |
-| **SEV-1** | Critical functionality down | 1 hour | Management |
-| **SEV-2** | Significant degradation | 4 hours | Team Lead |
-| **SEV-3** | Minor issues | 24 hours | Engineer |
+**Triage steps:**
+```bash
+# 1. Check overall health
+curl http://localhost:3000/health/detailed
 
-#### Incident Response Flow
+# 2. Review recent errors
+docker compose logs app --tail=200 | grep -E "(ERROR|WARN)"
 
-1. **Detection & Triage**
-   ```bash
-   # Monitor alerts
-   kubectl get events -n receptionist-agent --sort-by='.lastTimestamp'
-   
-   # Check system status
-   curl http://localhost:3000/health
-   
-   # Review recent logs
-   docker-compose logs --tail=100 app | grep ERROR
-   ```
+# 3. Check if RetellAI is reachable
+curl -I https://api.retellai.com
 
-2. **Assessment & Communication**
-   ```bash
-   # Create incident ticket
-   # Notify stakeholders via Slack/Email
-   # Update status page
-   ```
+# 4. Check if Keragon webhooks are reachable
+curl -X POST $KERAGON_WEBHOOK_URL \
+     -H "Content-Type: application/json" \
+     -d '{"event":"ping","test":true}'
 
-3. **Containment & Resolution**
-   ```bash
-   # Isolate affected services
-   kubectl scale deployment receptionist-agent --replicas=0 -n receptionist-agent
-   
-   # Apply fix
-   kubectl set image deployment/receptionist-agent \
-       receptionist-agent=receptionist-agent:fixed-version \
-       -n receptionist-agent
-   
-   # Restore service
-   kubectl scale deployment receptionist-agent --replicas=3 -n receptionist-agent
-   ```
+# 5. Check SignalWire status
+curl -I https://api.signalwire.com
+```
 
-4. **Verification & Recovery**
-   ```bash
-   # Verify fix
-   curl http://localhost:3000/health
-   
-   # Monitor for 30 minutes
-   watch -n 30 'curl -s http://localhost:3000/health | jq .status'
-   ```
+**Common fixes:**
+```bash
+# Restart the application
+docker compose restart app
 
-5. **Post-Incident Review**
-   - Document root cause
-   - Update procedures
-   - Implement preventive measures
-   - Share lessons learned
+# Restart Redis
+docker compose restart redis
+
+# Full restart
+docker compose down && docker compose up -d
+
+# Roll back to previous version (Kubernetes)
+kubectl rollout undo deployment/receptionist-agent -n receptionist-agent
+```
+
+**Post-incident:**
+- Document what failed and when
+- Check Keragon W4 for any `edge_case` records that fired during the outage
+- Verify no calls were dropped without logging
+- Check if any PHI deletion cron was skipped (if outage was at 2 AM)
 
 ---
 
 ### SOP-004: Backup & Recovery
 
-#### Purpose
-To ensure data protection and system recoverability.
+**What to back up:**
 
-#### Backup Schedule
+| Data | Location | Frequency | Why |
+|------|----------|-----------|-----|
+| Redis data | Docker volume / RDB file | Every 6 hours | Appointment reminders + cache |
+| `.env` file | Secure vault (NOT Git) | On every change | All credentials |
+| Keragon run history | Keragon cloud | Auto-retained by Keragon | Call logs, audit trail |
+| Server logs | Log aggregator | Daily | Debugging, audit |
 
-| Data Type | Frequency | Retention | Storage |
-|-----------|-----------|-----------|---------|
-| **Redis Data** | Every 6 hours | 30 days | Cloud Storage |
-| **Application Logs** | Daily | 90 days | Log Aggregator |
-| **Configuration** | On change | 1 year | Git Repository |
-| **SSL Certificates** | Monthly | 3 years | Secure Storage |
-
-#### Backup Procedures
-
-**Redis Backup**
+**Redis backup:**
 ```bash
 #!/bin/bash
-# redis-backup.sh
-
 DATE=$(date +%Y%m%d_%H%M%S)
 BACKUP_DIR="/backups/redis"
-CONTAINER_NAME="receptionist-agent_redis_1"
-
-# Create backup directory
 mkdir -p $BACKUP_DIR
 
 # Trigger Redis save
-docker exec $CONTAINER_NAME redis-cli BGSAVE
-
-# Wait for save to complete
+docker exec receptionist-redis redis-cli BGSAVE
 sleep 10
 
-# Copy backup file
-docker cp $CONTAINER_NAME:/data/dump.rdb $BACKUP_DIR/dump_$DATE.rdb
-
-# Compress backup
+# Copy dump
+docker cp receptionist-redis:/data/dump.rdb $BACKUP_DIR/dump_$DATE.rdb
 gzip $BACKUP_DIR/dump_$DATE.rdb
 
 # Upload to cloud storage
-aws s3 cp $BACKUP_DIR/dump_$DATE.rdb.gz s3://backups/redis/
+aws s3 cp $BACKUP_DIR/dump_$DATE.rdb.gz s3://your-bucket/redis/
 
-# Clean local files older than 7 days
-find $BACKUP_DIR -name "*.rdb.gz" -mtime +7 -delete
-
-echo "Redis backup completed: dump_$DATE.rdb.gz"
+echo "Backup complete: dump_$DATE.rdb.gz"
 ```
 
-**Configuration Backup**
+**Redis recovery:**
 ```bash
-#!/bin/bash
-# config-backup.sh
+BACKUP_FILE=$1   # e.g. dump_20260225_020000.rdb.gz
 
-DATE=$(date +%Y%m%d_%H%M%S)
-BACKUP_DIR="/backups/config"
-
-mkdir -p $BACKUP_DIR
-
-# Backup environment variables
-cp .env $BACKUP_DIR/env_$DATE
-
-# Backup Kubernetes configurations
-kubectl get all -n receptionist-agent -o yaml > $BACKUP_DIR/k8s_$DATE.yaml
-
-# Backup secrets (encrypted)
-kubectl get secrets -n receptionist-agent -o yaml | \
-  ansible-vault encrypt > $BACKUP_DIR/secrets_$DATE.yaml.vault
-
-# Commit to Git (encrypted repository)
-git add $BACKUP_DIR/
-git commit -m "Configuration backup $DATE"
-git push origin main
-
-echo "Configuration backup completed: $DATE"
+# Stop Redis, restore, restart
+docker stop receptionist-redis
+gunzip -c $BACKUP_FILE > /tmp/dump.rdb
+docker cp /tmp/dump.rdb receptionist-redis:/data/dump.rdb
+docker start receptionist-redis
+sleep 5
+docker exec receptionist-redis redis-cli ping  # should return PONG
 ```
 
-#### Recovery Procedures
-
-**Redis Recovery**
-```bash
-#!/bin/bash
-# redis-recovery.sh
-
-BACKUP_FILE=$1
-CONTAINER_NAME="receptionist-agent_redis_1"
-
-if [ -z "$BACKUP_FILE" ]; then
-    echo "Usage: $0 <backup_file>"
-    exit 1
-fi
-
-# Stop Redis
-docker stop $CONTAINER_NAME
-
-# Copy backup file
-docker cp $BACKUP_FILE $CONTAINER_NAME:/data/dump.rdb
-
-# Start Redis
-docker start $CONTAINER_NAME
-
-# Verify recovery
-sleep 10
-docker exec $CONTAINER_NAME redis-cli ping
-
-echo "Redis recovery completed from $BACKUP_FILE"
-```
-
-**Full System Recovery**
-```bash
-#!/bin/bash
-# system-recovery.sh
-
-BACKUP_DATE=$1
-
-if [ -z "$BACKUP_DATE" ]; then
-    echo "Usage: $0 <YYYYMMDD>"
-    exit 1
-fi
-
-# Restore Kubernetes configurations
-kubectl apply -f /backups/config/k8s_$BACKUP_DATE.yaml
-
-# Restore Redis data
-./redis-recovery.sh /backups/redis/dump_$BACKUP_DATE.rdb.gz
-
-# Verify system health
-sleep 30
-curl http://localhost:3000/health
-
-echo "System recovery completed for $BACKUP_DATE"
-```
+**Note on call logs:** Keragon stores the primary call log record. Redis only stores appointment reminder state and temporary call cache (deleted after 7 days anyway). Losing Redis does NOT lose call history — Keragon is the system of record.
 
 ---
 
-### SOP-005: Performance Optimization
+### SOP-005: How to Disable / Shut Down the System
 
-#### Purpose
-To maintain optimal system performance and scalability.
-
-#### Performance Metrics
-
-| Metric | Target | Alert Threshold |
-|--------|--------|-----------------|
-| **Response Time** | <500ms | >2s |
-| **Error Rate** | <0.1% | >1% |
-| **Memory Usage** | <70% | >85% |
-| **CPU Usage** | <60% | >80% |
-| **Concurrent Calls** | 100+ | N/A |
-| **Redis Latency** | <5ms | >50ms |
-
-#### Optimization Procedures
-
-**Application Performance**
+#### Full system shutdown
 ```bash
-# Monitor application performance
-docker stats --no-stream
-kubectl top pods -n receptionist-agent
-
-# Analyze memory usage
-node --inspect=0.0.0.0:9229 src/index.js
-
-# Profile CPU usage
-clinic doctor -- node src/index.js
+docker compose down
 ```
+This stops all call handling, SMS, and cron jobs immediately.
 
-**Database Optimization**
-```bash
-# Redis performance tuning
-redis-cli CONFIG SET maxmemory-policy allkeys-lru
-redis-cli CONFIG SET timeout 300
+#### Disable inbound calls only (keep server running)
+- **RetellAI dashboard** → Your agent → set status to **Inactive** or **remove phone number assignment**
+- Callers will hear a "not in service" message or call will not connect
+- Webhook server keeps running; existing Keragon/SMS automation unaffected
 
-# Monitor Redis performance
-redis-cli --latency-history
-redis-cli INFO memory
-redis-cli INFO stats
+#### Disable all SMS
+```env
+# In .env
+SMS_ENABLED=false
 ```
+Restart server. No SMS will be sent (calls still handled and logged).
 
-**Scaling Procedures**
-```bash
-# Horizontal scaling
-kubectl scale deployment receptionist-agent --replicas=5 -n receptionist-agent
-
-# Vertical scaling
-kubectl patch deployment receptionist-agent -n receptionist-agent -p '
-{
-  "spec": {
-    "template": {
-      "spec": {
-        "containers": [{
-          "name": "receptionist-agent",
-          "resources": {
-            "requests": {
-              "memory": "1Gi",
-              "cpu": "1000m"
-            },
-            "limits": {
-              "memory": "2Gi",
-              "cpu": "2000m"
-            }
-          }
-        }]
-      }
-    }
-  }
-}'
+#### Disable appointment reminders + PHI deletion cron
+```env
+# In .env
+SCHEDULER_ENABLED=false
 ```
+Restart server. Cron jobs will not start.
+
+#### Disable Google Calendar only
+```env
+# In .env — blank out or remove this line
+GOOGLE_CALENDAR_ID=
+```
+Restart server. `isConfigured()` returns false; no calendar events created, no errors.
+
+#### Disable a single Keragon workflow
+1. Open [app.keragon.com](https://app.keragon.com) → Workflows
+2. Click the workflow to open it
+3. Click the **Active** toggle → set to **Inactive**
+4. Webhook calls will still arrive but the workflow will not run
+
+#### Emergency credential rotation
+If API credentials are compromised:
+1. Rotate key in the provider dashboard (RetellAI / SignalWire / Keragon)
+2. Update `.env` with new key
+3. `docker compose restart app`
+4. Verify health endpoint returns healthy
 
 ---
 
-## Security Procedures
+### SOP-006: Keragon 7-Day Data Retention
 
-### Security Monitoring
+**When:** Monthly check (ongoing). One-time Keragon Runs manual purge at go-live.
+**Who:** Arthur Garnett (Keragon workspace owner)
+**Why:** Required by scope §5.4/§5.7 — PHI must be purged after 7 days.
 
-#### Daily Security Checklist
-- [ ] Review authentication logs
-- [ ] Check for unusual API usage patterns
-- [ ] Verify SSL certificate validity
-- [ ] Scan for security vulnerabilities
-- [ ] Monitor webhook signature validation failures
+> **What the code already handles automatically (no action needed):**
+> - Redis call logs (`call:log:*`) and appointment records (`appt:*`) — deleted nightly at 2:00 AM by `runPhiDeletion()`
+> - Free-text SMS bodies (`sms:freetext:*`) — stored with a 7-day TTL in Redis; auto-expire without any cron action. Also swept by `runRetentionScrub()` at 2:00 AM as a safety net.
+> - Caller locale preferences (`caller:locale:*`) — written with a 7-day TTL; auto-expire.
+> - Every Keragon payload is stamped with a `retention_scrub_at` field (ISO timestamp, 7 days from send) so each run in the Keragon Runs tab is self-documenting.
+> - W1 payloads: `caller_id` is automatically anonymized to last-4 digits before reaching Keragon (e.g. `***4567`).
+> - Audit trail: `phi_auto_deletion` and `phi_retention_scrub` events are logged to Keragon W4 permanently after each nightly run.
 
-#### Security Incident Response
+#### Arthur's Only Manual Task — Monthly Keragon Runs Purge
 
-1. **Immediate Actions**
-   ```bash
-   # Block suspicious IPs
-   iptables -A INPUT -s SUSPICIOUS_IP -j DROP
-   
-   # Rotate compromised credentials
-   # Update webhook secrets
-   # Enable enhanced logging
-   ```
+Keragon does not have a native auto-delete API, so run records must be manually purged:
 
-2. **Investigation**
-   ```bash
-   # Review access logs
-   grep "SUSPICIOUS_IP" /var/log/nginx/access.log
-   
-   # Check authentication attempts
-   docker-compose logs app | grep "authentication"
-   
-   # Analyze webhook payloads
-   grep "signature" logs/app.log | tail -50
-   ```
+1. Log into [app.keragon.com](https://app.keragon.com) as Arthur Garnett.
+2. Go to **Runs** in the left sidebar.
+3. Filter runs where `Created At` is older than 7 days.
+4. Select all filtered runs and delete them.
+5. Repeat for all 4 workflows if the Runs view is per-workflow.
 
-3. **Recovery**
-   ```bash
-   # Update all credentials
-   # Revoke compromised API keys
-   # Deploy security patches
-   # Restore from clean backup
-   ```
+> **Do NOT delete** runs from `receptionist_emergency_alert` (W2) — emergency records are permanently retained by design.
+
+#### What Each Workflow's Runs Contain (Keragon Runs Tab)
+
+| Workflow | PHI in runs | Keragon field | Code action | Manual purge after |
+|---|---|---|---|---|
+| W1 `receptionist_call_log` | `caller_id` (anonymized), `caller_name`, `reason_for_visit` | `retention_scrub_at` stamped | `caller_id` → `***XXXX` | 7 days |
+| W2 `receptionist_emergency_alert` | Full emergency record | None | No scrubbing | **Never** |
+| W3 `receptionist_sms_events` | `phone_number`, rating, freetext sentinel | `retention_scrub_at` stamped | Raw freetext body stored only in Redis (7-day TTL) | 7 days |
+| W4 `receptionist_edge_cases` | Audit events only | None | Permanent | **Never** |
+
+#### TCPA Permanent Records (never purge from W3)
+- Runs where `event == "sms_opt_out"` — permanent (legal requirement)
+- Runs where `event == "sms_opt_in"` — permanent
+
+---
+
+### SOP-007: RetellAI Data Storage Verification
+
+**When:** At go-live, and after any `scripts/update-retell-agent.js` run.
+**Who:** Simone Lawson (developer) or Arthur Garnett (system owner).
+**Why:** Confirm `data_storage_setting: basic_attributes_only` is active on the live agent. This setting prevents RetellAI from storing call transcripts or recordings on their platform — a key HIPAA control.
+
+#### Verification Command
+```bash
+curl -s -H "Authorization: Bearer $RETELL_API_KEY" \
+  https://api.retellai.com/get-agent/$RETELL_AGENT_ID \
+  | node -e "const p=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')); \
+    console.log('storage:', p.data_storage_setting, '| days:', p.data_storage_retention_days)"
+```
+
+**Expected output:**
+```
+storage: basic_attributes_only | days: 7
+```
+
+If output shows `everything` or `undefined`, re-run:
+```bash
+node scripts/update-retell-agent.js
+```
+with valid `RETELL_API_KEY` and `RETELL_AGENT_ID` in `.env`.
+
+#### Arthur's Dashboard Confirmation
+Log into [app.retellai.com](https://app.retellai.com) → Agent settings → Privacy → confirm data storage shows **"Basic Attributes Only"** and retention shows **7 days**. This is the visual confirmation of the API setting.
+
+#### Arthur's BAA Action Item
+A Business Associate Agreement with RetellAI **must be signed before production go-live**. Even with `basic_attributes_only`, RetellAI processes audio in real-time and is a Business Associate under HIPAA.
+- Contact RetellAI: [retellai.com](https://www.retellai.com) or [email protected]
+- BAA is available to enterprise/healthcare customers — no annual contract required
 
 ---
 
 ## Troubleshooting Guide
 
-### Common Issues and Solutions
+### Issue: Calls not being logged in Keragon
 
-#### Issue 1: Service Not Responding
-
-**Symptoms**
-- Health endpoint returns 503
-- Webhook timeouts
-- High error rates
-
-**Diagnosis**
+**Check:**
 ```bash
-# Check service status
-docker-compose ps
-kubectl get pods -n receptionist-agent
+# Are Keragon URLs set?
+grep "KERAGON.*WEBHOOK" .env
 
-# Review logs
-docker-compose logs app --tail=100
-kubectl logs deployment/receptionist-agent -n receptionist-agent
+# Is the server reachable from the internet?
+curl -I https://your-domain.com/webhook/retell
 
-# Check resource usage
-docker stats
-kubectl top pods -n receptionist-agent
-```
-
-**Solutions**
-1. **Resource Exhaustion**
-   ```bash
-   # Scale up resources
-   kubectl scale deployment receptionist-agent --replicas=5
-   # Increase memory limits
-   # Add more Redis memory
-   ```
-
-2. **Application Crash**
-   ```bash
-   # Restart service
-   docker-compose restart app
-   kubectl rollout restart deployment/receptionist-agent -n receptionist-agent
-   ```
-
-3. **Network Issues**
-   ```bash
-   # Check connectivity
-   telnet localhost 3000
-   nslookup api.retellai.com
-   
-   # Verify firewall rules
-   iptables -L -n
-   ```
-
-#### Issue 2: Redis Connection Failures
-
-**Symptoms**
-- Circuit breaker open for Redis
-- Session data loss
-- Performance degradation
-
-**Diagnosis**
-```bash
-# Test Redis connectivity
-redis-cli -h localhost -p 6379 ping
-redis-cli info server
-
-# Check Redis logs
-docker-compose logs redis
-kubectl logs deployment/redis -n receptionist-agent
-
-# Monitor Redis metrics
-redis-cli --latency
-redis-cli info memory
-```
-
-**Solutions**
-1. **Redis Service Down**
-   ```bash
-   # Restart Redis
-   docker-compose restart redis
-   kubectl rollout restart deployment/redis -n receptionist-agent
-   ```
-
-2. **Memory Issues**
-   ```bash
-   # Clear Redis memory
-   redis-cli FLUSHDB
-   
-   # Adjust memory limits
-   redis-cli CONFIG SET maxmemory 512mb
-   redis-cli CONFIG SET maxmemory-policy allkeys-lru
-   ```
-
-3. **Network Problems**
-   ```bash
-   # Check network connectivity
-   telnet redis-host 6379
-   
-   # Verify DNS resolution
-   nslookup redis-service
-   ```
-
-#### Issue 3: API Integration Failures
-
-**Symptoms**
-- Webhook delivery failures
-- External service errors
-- Call processing failures
-
-**Diagnosis**
-```bash
-# Test API connectivity
-curl -H "Authorization: Bearer $RETELL_API_KEY" \
-     https://api.retellai.com/agents/$RETELL_AGENT_ID
-
-# Check webhook delivery
-curl -X POST http://localhost:3000/webhook/retell \
+# Test the Keragon W1 webhook directly
+curl -X POST "https://webhooks.us-1.keragon.com/v1/workflows/9f74dcab-6aa2-4615-8798-9a2b41290f7d/rBWs2NzSWYKwNDjU4h0Xb/signal" \
      -H "Content-Type: application/json" \
-     -H "X-Retell-Signature: test" \
-     -d '{"event_type":"test"}'
-
-# Review error logs
-grep "ERROR" logs/app.log | tail -20
+     -d '{"event":"call_ended","call_id":"test-001","timestamp":"2026-02-25T10:00:00Z"}'
 ```
 
-**Solutions**
-1. **API Key Issues**
-   ```bash
-   # Verify API credentials
-   echo $RETELL_API_KEY | wc -c
-   
-   # Test API access
-   curl -H "Authorization: Bearer $RETELL_API_KEY" \
-        https://api.retellai.com/agents
-   ```
+**Expected:** Keragon W1 shows a new run entry within 5 seconds.
 
-2. **Rate Limiting**
-   ```bash
-   # Check rate limits
-   curl -I https://api.retellai.com/agents
-   
-   # Implement backoff
-   # Review usage patterns
-   ```
+**Fix:** If webhook call returns non-200, check Keragon workspace is active and URLs in `.env` match live workflow URLs.
 
-3. **Webhook Configuration**
-   ```bash
-   # Verify webhook URL
-   curl -I http://your-domain.com/webhook/retell
-   
-   # Test signature validation
-   # Check SSL certificates
-   ```
+---
+
+### Issue: SMS not being sent
+
+**Check:**
+```bash
+# Is SMS enabled?
+grep "SMS_ENABLED" .env    # should be 'true'
+
+# Are SignalWire credentials set?
+grep "SIGNALWIRE" .env
+
+# Check logs for SMS errors
+docker compose logs app | grep -E "(SMS|sms|SignalWire)"
+```
+
+**Common causes:**
+- `SMS_ENABLED=false` — set to `true` and restart
+- SignalWire credentials not set in `.env`
+- SignalWire from-number not configured in `SIGNALWIRE_FROM_NUMBER`
+- Call duration < 30 seconds (implied consent threshold — no SMS sent for very short calls)
+- Caller explicitly declined SMS (`sms_consent_explicit: false`)
+
+---
+
+### Issue: Appointment reminder SMS not firing
+
+**Check:**
+```bash
+# Is scheduler running?
+docker compose logs app | grep -E "(Scheduler|reminder|PHI)"
+
+# Is the appointment in the cache?
+docker exec receptionist-redis redis-cli KEYS "appt:*"
+```
+
+**Common causes:**
+- `SCHEDULER_ENABLED=false` in `.env`
+- Appointment `appointmentISO` field not a valid ISO datetime (can't parse → cron skips it)
+- Redis is down (no cache = no appointments to remind)
+- Server restarted between appointment creation and reminder window (cron restarts, re-reads cache)
+
+---
+
+### Issue: Google Calendar events not appearing
+
+**Check:**
+```bash
+# Are all 3 Google Calendar vars set?
+grep -E "(GOOGLE_CALENDAR|GOOGLE_SERVICE|GOOGLE_PRIVATE)" .env
+
+# Check logs for calendar errors
+docker compose logs app | grep -i "calendar"
+```
+
+**Common causes:**
+- Missing env vars (any of the 3 will cause `isConfigured()` to return false — silently skipped)
+- Service account not granted "Make changes to events" permission on the target calendar
+- `GOOGLE_PRIVATE_KEY` has formatting issue — must have `\n` in the value (not real newlines when stored as env var)
+- `intended_visit_timeframe` field is empty — no timeframe captured = no calendar event
+
+---
+
+### Issue: Staff alert SMS for cancel/change not arriving
+
+**Check:**
+```bash
+# Is STAFF_ALERT_PHONE set?
+grep "STAFF_ALERT_PHONE" .env   # must be E.164 format: +12125550100
+
+# Check logs
+docker compose logs app | grep "Staff appointment alert"
+```
+
+**Common causes:**
+- `STAFF_ALERT_PHONE` not set in `.env`
+- Phone number not in E.164 format
+- SignalWire credentials not configured
+- RetellAI agent not extracting `appointmentIntent: cancel/change` from call (agent prompt issue)
+
+---
+
+### Issue: Low-score rating alerts not sending staff emails
+
+**Check:**
+- Open Keragon W3 → Runs → find `patient_rating` runs
+- Expand a run → check the `low_score_alert` field in the payload
+- If `low_score_alert: false` → rating was 4 or 5 (correct, no email)
+- If `low_score_alert: true` but no email → SendGrid step needs API key entered in Keragon W3
+
+**Fix:** In Keragon W3, open the SendGrid step → enter Arthur's SendGrid API key and verified sender email.
+
+---
+
+### Issue: Redis connection failing
+
+```bash
+# Test Redis directly
+redis-cli -h localhost -p 6379 ping
+# Expected: PONG
+
+# Restart Redis
+docker compose restart redis
+
+# Check memory
+redis-cli info memory | grep "used_memory_human"
+
+# If memory full — clear appointment cache (WARNING: clears all reminders)
+redis-cli FLUSHDB
+```
 
 ---
 
 ## Maintenance Calendar
 
-### Daily Tasks (00:00 UTC)
-- [ ] Health check verification
-- [ ] Error log review
-- [ ] Performance metric analysis
-- [ ] Backup completion verification
+### Daily (automated — verify ran correctly)
+- [ ] PHI auto-deletion at 2:00 AM — check Keragon W4 for `phi_auto_deletion` event
+- [ ] Appointment reminders fired — check Keragon W3 `sms_sent` events
+- [ ] No `ERROR` spikes in logs
+- [ ] Keragon W4 — no `sms_failed` events (if present, contact patient manually)
 
-### Weekly Tasks (Sunday 02:00 UTC)
-- [ ] Security patch application
-- [ ] Dependency updates
-- [ ] Capacity planning review
-- [ ] Documentation updates
+### Weekly
+- [ ] Review all 4 Keragon workflow run histories for anomalies
+- [ ] Check Google Calendar — confirm 1-hr events are appearing for scheduled calls
+- [ ] Verify SignalWire from-number is still active and not suspended
+- [ ] Confirm Redis memory usage is healthy (`redis-cli info memory`)
+- [ ] Review staff alert SMS history for appointment changes — follow up any unresolved ones
 
-### Monthly Tasks (1st of month)
-- [ ] Full system backup test
-- [ ] Disaster recovery drill
-- [ ] Security audit
-- [ ] Performance optimization review
-
-### Quarterly Tasks
-- [ ] Architecture review
-- [ ] Scalability assessment
-- [ ] Cost optimization
-- [ ] Compliance audit
+### Monthly
+- [ ] Full Redis backup test (backup + restore to staging)
+- [ ] Rotate API keys if any have been shared or are older than 90 days
+- [ ] Review Keragon data retention settings — ensure 7-day PHI deletion is configured
+- [ ] Check RetellAI agent performance (latency, fallback rates in RetellAI dashboard)
+- [ ] Verify compliance posture (see COMPLIANCE_GUIDE.md)
 
 ---
 
 ## Emergency Contacts
 
-| Role | Contact | Hours |
-|------|---------|-------|
-| **On-call Engineer** | +1-555-0001 | 24/7 |
-| **DevOps Lead** | +1-555-0002 | 24/7 |
-| **Security Team** | security@company.com | 24/7 |
-| **Management** | manager@company.com | Business hours |
+| Role | Contact |
+|------|---------|
+| **Client (Arthur Garnett)** | Clinic operations email/phone |
+| **Contractor (Simone Lawson)** | Primary support contact |
+| **RetellAI Support** | https://docs.retellai.com / support@retellai.com |
+| **SignalWire Support** | https://signalwire.com/support |
+| **Keragon Support** | https://app.keragon.com (in-app chat) |
 
 ---
 
-## Appendix
+## Appendix: Quick Command Reference
 
-### A. Configuration Templates
+```bash
+# Start system
+docker compose up -d
 
-[Environment variable templates and examples]
+# Stop system
+docker compose down
 
-### B. Monitoring Dashboards
+# View live logs
+docker compose logs -f app
 
-[Grafana dashboard configurations]
+# View only errors
+docker compose logs app | grep ERROR
 
-### C. Alert Rules
+# Health check
+curl http://localhost:3000/health
 
-[Prometheus alert rule definitions]
+# Detailed health
+curl http://localhost:3000/health/detailed
 
-### D. Runbooks
+# Check Redis
+redis-cli ping
+redis-cli info keyspace
 
-[Detailed runbooks for specific scenarios]
+# List all cached appointments
+docker exec receptionist-redis redis-cli KEYS "appt:*"
 
----
+# Check if scheduler started
+docker compose logs app | grep "Scheduler started"
 
-**Document Control**
-
-- **Owner**: Operations Manager
-- **Review Frequency**: Monthly
-- **Approval**: DevOps Director
-- **Distribution**: Operations Team, Management
-
-**Next Review Date**: February 25, 2026
+# Manual PHI deletion test (dev only)
+# POST to /webhook/keragon/callback with phi_auto_deletion event
+```

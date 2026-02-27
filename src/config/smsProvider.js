@@ -44,25 +44,36 @@ async function sendSms(to, body, opts = {}) {
   }
 
   // ── MOCK MODE ─────────────────────────────────────────────────────────────
-  if (process.env.USE_MOCKS === 'true' || process.env.NODE_ENV === 'test') {
+  if (process.env.USE_MOCKS === 'true' || process.env.MOCK_MODE === 'true' || process.env.NODE_ENV === 'test') {
     const { v4: uuidv4 } = require('uuid');
     const messageSid = 'SM' + uuidv4().replace(/-/g, '').slice(0, 32);
     logger.info('[MOCK] SMS sent', { to, messageSid, bodyLength: body.length });
     return { success: true, messageSid, status: 'queued' };
   }
 
-  // ── REAL PROVIDER — pending Retell SMS integration confirmation ───────────
-  // TODO: Replace this block with the Retell SMS approach once confirmed.
-  // Two likely patterns:
-  //   A) Retell fires SMS automatically from agent config — no code needed here,
-  //      remove this sendSms call chain from smsService.js/schedulerService.js.
-  //   B) We call a Retell API endpoint to trigger SMS:
-  //      const retell = require('./retell');
-  //      const msg = await retell.client.sendSms({ to, body, from: FROM_NUMBER });
-  //      return { success: true, messageSid: msg.id, status: msg.status };
+  // ── REAL PROVIDER — SignalWire ────────────────────────────────────────────
+  const { RestClient } = require('@signalwire/compatibility-api');
 
-  logger.warn('SMS provider not yet configured — message not sent', { to, bodyLength: body.length });
-  return { success: false, error: 'SMS provider not configured' };
+  const projectId = process.env.SIGNALWIRE_PROJECT_ID;
+  const apiToken  = process.env.SIGNALWIRE_API_TOKEN;
+  const spaceUrl  = process.env.SIGNALWIRE_SPACE_URL; // e.g. "yourspace.signalwire.com"
+
+  if (!projectId || !apiToken || !spaceUrl) {
+    logger.warn('SignalWire credentials not configured — SMS not sent', { to, bodyLength: body.length });
+    return { success: false, error: 'SignalWire credentials missing' };
+  }
+
+  const client = new RestClient(projectId, apiToken, { signalwireSpaceUrl: spaceUrl });
+
+  const msg = await client.messages.create({
+    from: FROM_NUMBER,
+    to,
+    body,
+    ...(STATUS_CALLBACK ? { statusCallback: STATUS_CALLBACK } : {})
+  });
+
+  logger.info('SMS sent via SignalWire', { to, messageSid: msg.sid, status: msg.status });
+  return { success: true, messageSid: msg.sid, status: msg.status };
 }
 
 module.exports = { sendSms, FROM_NUMBER };

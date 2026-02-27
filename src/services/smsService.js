@@ -54,11 +54,11 @@ async function sendRaw(phoneNumber, message) {
 async function sendCallbackConfirmation(phoneNumber, opts = {}) {
   const clinicName = process.env.CLINIC_NAME || 'our urgent care team';
   const locale = opts.locale || 'en';
-  const name = opts.callerName ? `, ${opts.callerName}` : '';
 
+  // PHI-FREE: no patient name in message — no BAA required
   const message = locale === 'es'
-    ? `Hola${name}, hemos recibido su solicitud de devolución de llamada. Un miembro de nuestro equipo se pondrá en contacto con usted durante el próximo horario de atención. — ${clinicName}`
-    : `Hi${name}, we received your callback request. A team member will reach out during the next available staffed hours. — ${clinicName}`;
+    ? `Hemos recibido su solicitud de devolución de llamada. Un miembro de nuestro equipo se pondrá en contacto durante el próximo horario de atención. — ${clinicName}`
+    : `We received your callback request. A team member will reach out during the next available staffed hours. — ${clinicName}`;
 
   try {
     const result = await sendRaw(phoneNumber, message);
@@ -146,6 +146,8 @@ async function sendFollowUp(callData) {
 
 /**
  * Generate follow-up message based on call context
+ * PHI-FREE: No patient name, no appointment details, no symptoms.
+ * Only clinic info (name, address, phone) — no BAA required for any SMS provider.
  * @param {Object} callData - Call data
  * @param {string} [locale='en'] - 'en' or 'es'
  * @returns {string} SMS message
@@ -153,45 +155,40 @@ async function sendFollowUp(callData) {
 function generateFollowUpMessage(callData, locale = 'en') {
   const clinicName = process.env.CLINIC_NAME || 'our urgent care';
   const clinicAddress = process.env.CLINIC_ADDRESS || '';
-  const clinicPhone = process.env.CLINIC_PHONE || '';
   const es = locale === 'es';
 
-  // Personalize if we have the caller's name
-  const greeting = callData.caller_name
-    ? (es ? `Hola ${callData.caller_name}, ` : `Hi ${callData.caller_name}, `)
-    : (es ? 'Hola, ' : 'Hi, ');
-
-  // Base message
+  // Build PHI-free message with clinic info + rating request + opt-out
   let message = es
-    ? `${greeting}gracias por llamar a ${clinicName}. `
-    : `${greeting}thank you for calling ${clinicName}. `;
-
-  // Add visit timeframe reminder if captured
-  if (callData.intended_visit_timeframe) {
-    message += es
-      ? `Recordamos que planea visitarnos ${callData.intended_visit_timeframe}. `
-      : `We noted you plan to visit ${callData.intended_visit_timeframe}. `;
-  }
-
-  // Add clinic info
-  message += es ? '¡Aceptamos pacientes sin cita!' : 'Walk-ins welcome!';
+    ? `¡Gracias por llamar a ${clinicName}!`
+    : `Thanks for calling ${clinicName}!`;
 
   if (clinicAddress) {
-    message += es ? ` Dirección: ${clinicAddress}.` : ` Location: ${clinicAddress}.`;
+    message += es
+      ? ` Estamos ubicados en ${clinicAddress}.`
+      : ` We're located at ${clinicAddress}.`;
   }
 
-  if (clinicPhone) {
-    message += es ? ` ¿Preguntas? Llame al ${clinicPhone}.` : ` Questions? Call ${clinicPhone}.`;
-  }
+  message += es
+    ? ' Aceptamos pacientes sin cita. ¿Cómo fue su experiencia? Responda del 1 al 5. Responda STOP para darse de baja.'
+    : ' Walk-ins welcome — no appointment needed. How was your experience? Reply 1-5. Reply STOP to opt out.';
 
   // Keep message under SMS limit (160 chars for single segment)
   if (message.length > 160) {
-    message = es
-      ? `${greeting}gracias por llamar a ${clinicName}. ¡Aceptamos pacientes sin cita!`
-      : `${greeting}thanks for calling ${clinicName}. Walk-ins welcome!`;
-    if (clinicPhone) {
-      message += es ? ` Tel: ${clinicPhone}` : ` Questions: ${clinicPhone}`;
-    }
+    // Try short version with address first
+    const shortBase = es
+      ? `¡Gracias por llamar a ${clinicName}!`
+      : `Thanks for calling ${clinicName}!`;
+    const shortAddr = clinicAddress
+      ? (es ? ` ${clinicAddress}.` : ` ${clinicAddress}.`)
+      : '';
+    const shortSuffix = es
+      ? ' Sin cita. Califíquenos del 1 al 5. Responda STOP.'
+      : ' Walk-ins welcome. Rate us 1-5. Reply STOP.';
+    const shortWithAddr = shortBase + shortAddr + shortSuffix;
+
+    message = shortWithAddr.length <= 160
+      ? shortWithAddr
+      : shortBase + shortSuffix; // drop address only if still over limit
   }
 
   return message;

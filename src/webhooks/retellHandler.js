@@ -15,6 +15,8 @@ const callLogger = require('../services/callLogger');
 const smsService = require('../services/smsService');
 const spamDetection = require('../utils/spamDetection');
 const validation = require('../utils/validation');
+const googleCalendarService = require('../services/googleCalendarService');
+const schedulerService = require('../services/schedulerService');
 
 /**
  * Main webhook handler for RetellAI events
@@ -166,6 +168,99 @@ async function handleCallEnded(event) {
     event: 'call_ended',
     ...callLog
   });
+
+  // ── Google Calendar: create event for new soft-scheduled appointments ──────
+  // Staff-reference only — creates a 1-hour block so clinic staff can see
+  // overnight walk-in intent. Failure is non-fatal; call flow continues.
+  if (
+    !callLog.spam_flag &&
+    !callLog.emergency_trigger &&
+    callLog.disposition === 'completed' &&
+    callLog.intended_visit_timeframe &&
+    googleCalendarService.isConfigured()
+  ) {
+    try {
+      const gcalResult = await googleCalendarService.createAppointmentEvent(callLog);
+      if (gcalResult.success) {
+        callLog.gcal_event_id = gcalResult.eventId;
+        logger.info('Google Calendar event created', {
+          callId: callData.callId,
+          eventId: gcalResult.eventId
+        });
+      } else {
+        logger.warn('Google Calendar event not created', {
+          callId: callData.callId,
+          reason: gcalResult.error
+        });
+      }
+    } catch (err) {
+      logger.error('Google Calendar create threw unexpectedly', {
+        callId: callData.callId,
+        error: err.message
+      });
+    }
+  }
+
+  // ── Appointment change / cancel flow ──────────────────────────────────────
+  // 1. Cancel Redis reminder so no stale SMS fires
+  // 2. Log edge case to Keragon (routes to W4 edge_cases workflow)
+  // 3. SMS alert to staff — they manually handle calendar update
+  if (
+    callLog.disposition === 'appointment_cancel' ||
+    callLog.disposition === 'appointment_change'
+  ) {
+    // 1. Cancel Redis/cache reminder
+    if (callLog.existing_appointment_id) {
+      try {
+        await schedulerService.cancelScheduledAppointment(callLog.existing_appointment_id);
+      } catch (err) {
+        logger.warn('Failed to cancel scheduled appointment reminder', {
+          callId: callLog.call_id,
+          appointmentId: callLog.existing_appointment_id,
+          error: err.message
+        });
+      }
+    }
+
+    // 2. Log edge case to Keragon (W4)
+    try {
+      await callLogger.logEdgeCase(callLog.disposition, {
+        callId: callLog.call_id,
+        description: `Patient requested ${callLog.disposition.replace('_', ' ')}`,
+        context: {
+          callerName: callLog.caller_name,
+          callerId: callLog.caller_id,
+          existingAppointmentId: callLog.existing_appointment_id,
+          requestedTimeframe: callLog.intended_visit_timeframe
+        }
+      });
+    } catch (err) {
+      logger.warn('Failed to log appointment change/cancel edge case', {
+        callId: callLog.call_id,
+        error: err.message
+      });
+    }
+
+    // 3. SMS staff alert (requires STAFF_ALERT_PHONE env var)
+    if (process.env.STAFF_ALERT_PHONE && callLog.caller_id) {
+      try {
+        const verb = callLog.disposition === 'appointment_cancel' ? 'CANCEL' : 'CHANGE';
+        await smsService.sendRaw(
+          process.env.STAFF_ALERT_PHONE,
+          `[Receptionist Alert] Appointment ${verb} requested.\nPatient: ${callLog.caller_name || 'Unknown'} (${callLog.caller_id})\nCall ID: ${callLog.call_id}`
+        );
+        logger.info('Staff appointment alert SMS sent', {
+          callId: callLog.call_id,
+          disposition: callLog.disposition
+        });
+      } catch (err) {
+        logger.warn('Staff alert SMS failed', {
+          callId: callLog.call_id,
+          error: err.message
+        });
+      }
+    }
+  }
 
   // Send callback confirmation SMS if caller requested a callback
   if (callLog.callback_requested && callLog.caller_id) {
