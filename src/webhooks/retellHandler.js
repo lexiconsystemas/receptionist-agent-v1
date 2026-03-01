@@ -26,13 +26,22 @@ async function handleWebhook(req, res) {
 
   try {
     // Validate webhook signature.
-    // RetellAI signs JSON.stringify(body) + timestamp with RETELL_API_KEY.
-    // Use JSON.stringify(req.body) to match what the official Retell SDK does.
+    // RetellAI signs the raw request body bytes + timestamp with RETELL_API_KEY.
+    // Must use req.rawBody (captured in express.json verify callback) — NOT
+    // JSON.stringify(req.body), which can differ in key order / whitespace.
     const signature = req.headers['x-retell-signature'];
-    const rawBody = JSON.stringify(req.body);
+    const bodyForSig = req.rawBody || JSON.stringify(req.body);
+
+    logger.info('Webhook sig inputs', {
+      hasRawBody: !!req.rawBody,
+      rawBodyLen: req.rawBody ? req.rawBody.length : 0,
+      jsonBodyLen: JSON.stringify(req.body).length,
+      rawBodyStart: req.rawBody ? req.rawBody.substring(0, 40) : null,
+      jsonBodyStart: JSON.stringify(req.body).substring(0, 40)
+    });
 
     if (process.env.NODE_ENV === 'production') {
-      if (!retellConfig.validateWebhookSignature(rawBody, signature)) {
+      if (!retellConfig.validateWebhookSignature(bodyForSig, signature)) {
         logger.warn('Invalid RetellAI webhook signature');
         return res.status(401).json({ error: 'Invalid signature' });
       }
