@@ -31,21 +31,24 @@ const retellClient = axios.create({
 
 /**
  * Validate RetellAI webhook signature
- * @param {string} payload - Raw request body
+ * @param {string} payload - Raw request body (req.rawBody — exact bytes received)
  * @param {string} signature - X-Retell-Signature header
  * @returns {boolean} Whether signature is valid
+ *
+ * RetellAI signs with RETELL_WEBHOOK_SECRET (not the API key).
+ * Signature format: v={timestamp_ms},d={hmac_sha256_hex}
+ * HMAC input: rawBody + timestamp  (string concatenation, no separator)
+ * See: https://github.com/RetellAI/retell-typescript-sdk/blob/main/src/lib/webhook_auth.ts
  */
 function validateWebhookSignature(payload, signature) {
-  if (!RETELL_API_KEY) {
-    logger.warn('RETELL_API_KEY not configured - skipping signature validation');
+  const signingKey = RETELL_WEBHOOK_SECRET || RETELL_API_KEY;
+  if (!signingKey) {
+    logger.warn('No RetellAI signing key configured (RETELL_WEBHOOK_SECRET / RETELL_API_KEY) — skipping validation');
     return true;
   }
 
   try {
-    // RetellAI signature format: v={timestamp},d={hmac_sha256_hex}
-    // Key  = RETELL_API_KEY
-    // Input = body_string + timestamp  (concatenated, no separator)
-    // See: https://github.com/RetellAI/retell-typescript-sdk/blob/main/src/lib/webhook_auth.ts
+    // Parse v={timestamp},d={hex_digest}
     const match = /v=(\d+),d=(.*)/.exec(signature || '');
     if (!match) {
       logger.warn('RetellAI webhook signature format invalid');
@@ -64,61 +67,20 @@ function validateWebhookSignature(payload, signature) {
       return false;
     }
 
-    // HMAC-SHA256(key=signingKey, data=payload+poststamp), hex-encoded
-    // Try RETELL_API_KEY first, then fall back to RETELL_WEBHOOK_SECRET.
-    // RetellAI's SDK uses the API key but some accounts use a dedicated secret.
-    const digestWithApiKey = crypto
-      .createHmac('sha256', RETELL_API_KEY)
+    const expectedDigest = crypto
+      .createHmac('sha256', signingKey)
       .update(payload + poststamp, 'utf8')
       .digest('hex');
 
-    const digestWithWebhookSecret = RETELL_WEBHOOK_SECRET
-      ? crypto
-          .createHmac('sha256', RETELL_WEBHOOK_SECRET)
-          .update(payload + poststamp, 'utf8')
-          .digest('hex')
-      : null;
-
-    // DEBUG: log first 8 chars of each candidate digest (non-sensitive prefix only)
-    logger.info('RetellAI sig debug', {
-      payloadLen: payload.length,
-      payloadStart: payload.substring(0, 30),
-      poststamp,
-      apiKeyLen: RETELL_API_KEY.length,
-      webhookSecretLen: RETELL_WEBHOOK_SECRET ? RETELL_WEBHOOK_SECRET.length : 0,
-      received: (postDigest || '').substring(0, 8),
-      withApiKey: digestWithApiKey.substring(0, 8),
-      withWebhookSecret: digestWithWebhookSecret ? digestWithWebhookSecret.substring(0, 8) : 'n/a',
-      apiKeyMatch: (postDigest || '').substring(0, 8) === digestWithApiKey.substring(0, 8),
-      webhookSecretMatch: digestWithWebhookSecret
-        ? (postDigest || '').substring(0, 8) === digestWithWebhookSecret.substring(0, 8)
-        : false
-    });
-
     const postBuf = Buffer.from(postDigest || '', 'utf8');
+    const expectedBuf = Buffer.from(expectedDigest, 'utf8');
 
-    // Check API key first
-    const expectedBufApiKey = Buffer.from(digestWithApiKey, 'utf8');
-    if (postBuf.length === expectedBufApiKey.length) {
-      if (crypto.timingSafeEqual(postBuf, expectedBufApiKey)) {
-        logger.info('RetellAI sig validated with RETELL_API_KEY');
-        return true;
-      }
+    if (postBuf.length !== expectedBuf.length) {
+      logger.warn('RetellAI webhook signature length mismatch');
+      return false;
     }
 
-    // Fall back to webhook secret
-    if (digestWithWebhookSecret) {
-      const expectedBufSecret = Buffer.from(digestWithWebhookSecret, 'utf8');
-      if (postBuf.length === expectedBufSecret.length) {
-        if (crypto.timingSafeEqual(postBuf, expectedBufSecret)) {
-          logger.info('RetellAI sig validated with RETELL_WEBHOOK_SECRET');
-          return true;
-        }
-      }
-    }
-
-    logger.warn('RetellAI sig: neither RETELL_API_KEY nor RETELL_WEBHOOK_SECRET matched');
-    return false;
+    return crypto.timingSafeEqual(postBuf, expectedBuf);
   } catch (error) {
     logger.error('Error validating RetellAI webhook signature', { error: error.message });
     return false;
