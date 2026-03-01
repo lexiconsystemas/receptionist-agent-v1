@@ -70,6 +70,17 @@ function validateWebhookSignature(payload, signature) {
       .update(payload + poststamp, 'utf8')
       .digest('hex');
 
+    // DEBUG: log first 8 chars of each digest to compare (non-sensitive prefix only)
+    logger.info('RetellAI sig debug', {
+      payloadLen: payload.length,
+      payloadStart: payload.substring(0, 30),
+      poststamp,
+      apiKeyLen: RETELL_API_KEY.length,
+      receivedDigestStart: (postDigest || '').substring(0, 8),
+      expectedDigestStart: expectedDigest.substring(0, 8),
+      match: (postDigest || '').substring(0, 8) === expectedDigest.substring(0, 8)
+    });
+
     const postBuf = Buffer.from(postDigest || '', 'utf8');
     const expectedBuf = Buffer.from(expectedDigest, 'utf8');
 
