@@ -19,7 +19,6 @@ service-account.json
 # DEPENDENCIES
 # -------------------------------------------
 node_modules/
-package-lock.json
 yarn.lock
 pnpm-lock.yaml
 
