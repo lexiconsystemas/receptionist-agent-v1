@@ -45,12 +45,20 @@ function validateWebhookSignature(payload, signature) {
     const expectedSignature = crypto
       .createHmac('sha256', RETELL_WEBHOOK_SECRET)
       .update(payload, 'utf8')
-      .digest('hex');
+      .digest('base64');
 
-    return crypto.timingSafeEqual(
-      Buffer.from(signature),
-      Buffer.from(expectedSignature)
-    );
+    const sigBuffer = Buffer.from(signature || '', 'utf8');
+    const expectedBuffer = Buffer.from(expectedSignature, 'utf8');
+
+    if (sigBuffer.length !== expectedBuffer.length) {
+      logger.warn('RetellAI webhook signature length mismatch', {
+        received: sigBuffer.length,
+        expected: expectedBuffer.length
+      });
+      return false;
+    }
+
+    return crypto.timingSafeEqual(sigBuffer, expectedBuffer);
   } catch (error) {
     logger.error('Error validating RetellAI webhook signature', { error: error.message });
     return false;
