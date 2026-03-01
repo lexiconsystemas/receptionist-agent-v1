@@ -57,7 +57,7 @@ prompt = prompt
   .replace(/{{CLINIC_NAME}}/g, 'Demo Urgent Care')
   .replace(/{{CLINIC_ADDRESS}}/g, 'TBD - clinic not yet onboarded')
   .replace(/{{CLINIC_PHONE}}/g, '+10000000000')
-  .replace(/{{CLINIC_HOURS}}/g, 'Mon-Fri 8am-8pm, Sat 9am-5pm, Sun 10am-4pm')
+  .replace(/{{CLINIC_HOURS}}/g, 'Monday through Friday 8am to 8pm, Saturday 9am to 5pm, and Sunday 10am to 4pm')
   .replace(/{{visit_timeframe}}/g, '[visit timeframe]');
 
 function retellRequest(method, endpoint, body) {

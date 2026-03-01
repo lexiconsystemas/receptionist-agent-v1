@@ -169,8 +169,8 @@ function generateFollowUpMessage(callData, locale = 'en') {
   }
 
   message += es
-    ? ' Aceptamos pacientes sin cita. ¿Cómo fue su experiencia? Responda del 1 al 5. Responda STOP para darse de baja.'
-    : ' Walk-ins welcome — no appointment needed. How was your experience? Reply 1-5. Reply STOP to opt out.';
+    ? ' Aceptamos pacientes sin cita. ¿Cómo fue su experiencia? Responda del 1 al 5. Puede simplemente responder STOP para dejar de recibir mensajes.'
+    : ' Walk-ins welcome — no appointment needed. How was your experience? Reply 1-5. You can simply reply STOP to stop receiving messages.';
 
   // Keep message under SMS limit (160 chars for single segment)
   if (message.length > 160) {
@@ -182,8 +182,8 @@ function generateFollowUpMessage(callData, locale = 'en') {
       ? (es ? ` ${clinicAddress}.` : ` ${clinicAddress}.`)
       : '';
     const shortSuffix = es
-      ? ' Sin cita. Califíquenos del 1 al 5. Responda STOP.'
-      : ' Walk-ins welcome. Rate us 1-5. Reply STOP.';
+      ? ' Sin cita. Califíquenos del 1 al 5. Responda STOP para darse de baja.'
+      : ' Walk-ins welcome. Rate us 1-5. Reply STOP to stop messages.';
     const shortWithAddr = shortBase + shortAddr + shortSuffix;
 
     message = shortWithAddr.length <= 160

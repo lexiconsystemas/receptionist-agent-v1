@@ -128,6 +128,26 @@ app.get('/health/mocks', (req, res) => {
 // RETELL AI WEBHOOK ENDPOINTS
 // ===========================================
 
+// Begin-call webhook — fires before the first LLM message on inbound calls.
+// RetellAI calls this URL (configured on the phone number as inbound_dynamic_variables_webhook_url)
+// and injects the returned dynamic_variables into the LLM prompt.
+// This populates {{caller_phone_number}} so the agent can proactively confirm it.
+app.post('/webhook/retell/begin-call', (req, res) => {
+  try {
+    const fromNumber = req.body?.call?.from_number || req.body?.from_number || null;
+    logger.info('Begin-call webhook fired', { fromNumber });
+    res.json({
+      dynamic_variables: {
+        caller_phone_number: fromNumber || ''
+      }
+    });
+  } catch (error) {
+    logger.error('Begin-call webhook error', { error: error.message });
+    // Return empty variables on error — call continues normally
+    res.json({ dynamic_variables: { caller_phone_number: '' } });
+  }
+});
+
 // Main webhook for RetellAI call events
 app.post('/webhook/retell', retellHandler.handleWebhook);
 

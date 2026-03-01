@@ -51,7 +51,7 @@ function getMockStatus() {
       sms: {
         mocked: MOCK_ENABLED,
         real_credentials_configured: !!(
-          process.env.TWILIO_ACCOUNT_SID || process.env.SMS_API_KEY
+          process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN
         )
       }
     }

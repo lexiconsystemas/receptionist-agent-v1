@@ -1,25 +1,18 @@
 /**
- * SMS Provider — Stub (Retell SMS pending)
+ * SMS Provider — Twilio
  *
- * RetellAI handles telephony AND outbound SMS natively.
- * The integration approach (Retell API call vs. agent-triggered) is TBD.
- *
- * This module is the single injection point for all SMS sends in:
+ * Single injection point for all SMS sends in:
  *   - smsService.js (post-call follow-up, callback confirmation, emergency resources)
  *   - schedulerService.js (appointment reminders)
  *   - inboundSmsHandler.js (rating follow-up, opt-in/out ack)
  *
  * When USE_MOCKS=true or NODE_ENV=test the mock store is used (no real API call).
- *
- * TODO: Once Retell SMS integration approach is confirmed, replace the real-provider
- * stub below with the appropriate Retell API call (or remove if Retell fires SMS
- * automatically from agent config with no server-side trigger needed).
  */
 
 const logger = require('./logger');
 
-// From-number used for all outbound SMS (may not be needed if Retell owns the number)
-const FROM_NUMBER = process.env.SMS_FROM_NUMBER || process.env.SIGNALWIRE_PHONE_NUMBER || '+15550000000';
+// From-number used for all outbound SMS
+const FROM_NUMBER = process.env.SMS_FROM_NUMBER || process.env.TWILIO_PHONE_NUMBER || '+15550000000';
 
 // Status callback URL for delivery receipts
 const STATUS_CALLBACK = process.env.APP_BASE_URL
@@ -51,19 +44,18 @@ async function sendSms(to, body, opts = {}) {
     return { success: true, messageSid, status: 'queued' };
   }
 
-  // ── REAL PROVIDER — SignalWire ────────────────────────────────────────────
-  const { RestClient } = require('@signalwire/compatibility-api');
+  // ── REAL PROVIDER — Twilio ────────────────────────────────────────────────
+  const twilio = require('twilio');
 
-  const projectId = process.env.SIGNALWIRE_PROJECT_ID;
-  const apiToken  = process.env.SIGNALWIRE_API_TOKEN;
-  const spaceUrl  = process.env.SIGNALWIRE_SPACE_URL; // e.g. "yourspace.signalwire.com"
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken  = process.env.TWILIO_AUTH_TOKEN;
 
-  if (!projectId || !apiToken || !spaceUrl) {
-    logger.warn('SignalWire credentials not configured — SMS not sent', { to, bodyLength: body.length });
-    return { success: false, error: 'SignalWire credentials missing' };
+  if (!accountSid || !authToken) {
+    logger.warn('Twilio credentials not configured — SMS not sent', { to, bodyLength: body.length });
+    return { success: false, error: 'Twilio credentials missing' };
   }
 
-  const client = new RestClient(projectId, apiToken, { signalwireSpaceUrl: spaceUrl });
+  const client = twilio(accountSid, authToken);
 
   const msg = await client.messages.create({
     from: FROM_NUMBER,
@@ -72,7 +64,7 @@ async function sendSms(to, body, opts = {}) {
     ...(STATUS_CALLBACK ? { statusCallback: STATUS_CALLBACK } : {})
   });
 
-  logger.info('SMS sent via SignalWire', { to, messageSid: msg.sid, status: msg.status });
+  logger.info('SMS sent via Twilio', { to, messageSid: msg.sid, status: msg.status });
   return { success: true, messageSid: msg.sid, status: msg.status };
 }
 

@@ -75,12 +75,57 @@ async function main() {
     ambient_sound: null,
     ambient_sound_volume: 0,
 
-    // HIPAA: Disable transcript/recording storage on RetellAI's platform.
-    // 'basic_attributes_only' stores only call metadata; no transcripts, recordings, or logs.
-    data_storage_setting: 'basic_attributes_only',
+    // HIPAA note: 'everything_except_pii' retains the transcript for post-call analysis
+    // while RetellAI redacts PII from what it stores on their side.
+    // Our own schedulerService.js enforces 7-day PHI auto-deletion on our side.
+    // RetellAI's own retention is capped at 7 days via data_storage_retention_days below.
+    data_storage_setting: 'everything_except_pii',
 
-    // Auto-delete even basic call metadata from RetellAI after 7 days.
+    // Auto-delete call data from RetellAI after 7 days.
     data_storage_retention_days: 7,
+
+    // Voice: Cartesia Sloane — American female, warm and natural (replaces OpenAI Grace which is flat/monotone)
+    voice_id: 'cartesia-Sloane',
+
+    // Voice quality: reduce from default 1.0 to smooth out choppy sentence starts
+    // and reduce false interruptions during natural speech pauses.
+    responsiveness: 0.9,
+    interruption_sensitivity: 0.8,
+
+    // ── Post-Call Analysis ──────────────────────────────────────────────────────
+    // Tells RetellAI to extract structured fields from the conversation transcript
+    // after each call. Results are returned in `extracted_data` on the call_ended
+    // webhook event, and read by retellHandler.js → validation.js → callerInfo.
+    post_call_analysis_schema: {
+      type: 'object',
+      properties: {
+        visitTimeframe: {
+          type: 'string',
+          description: 'When the caller intends to visit or come in. E.g. "today", "tomorrow morning", "within the hour", "this afternoon". Null if no visit was mentioned.'
+        },
+        appointmentIntent: {
+          type: 'string',
+          enum: ['new', 'change', 'cancel'],
+          description: 'Did the caller want to schedule a new visit, change an existing appointment, or cancel one? Null if not mentioned.'
+        },
+        callerName: {
+          type: 'string',
+          description: 'Full name provided by the caller during the conversation.'
+        },
+        reasonForVisit: {
+          type: 'string',
+          description: 'Brief, non-diagnostic reason for the visit. Keep general — 2 to 4 words max. E.g. "sore throat", "cut on hand", "fever", "follow-up visit".'
+        },
+        smsConsent: {
+          type: 'boolean',
+          description: 'Did the caller explicitly agree to receive a follow-up text message? True only if they said yes to the SMS question.'
+        },
+        callbackRequested: {
+          type: 'boolean',
+          description: 'Did the caller ask to leave a message for staff or be called back? True if they agreed to the callback/message flow.'
+        }
+      }
+    }
   });
 
   if (res.status !== 200) {
@@ -91,8 +136,12 @@ async function main() {
   console.log('✅ Agent updated successfully.');
   console.log(`   begin_message cleared — LLM prompt now controls the greeting.`);
   console.log(`   ambient_sound: null`);
-  console.log(`   data_storage_setting: basic_attributes_only (no transcripts/recordings stored)`);
+  console.log(`   data_storage_setting: everything_except_pii (enables post-call analysis; RetellAI redacts PII from stored transcript)`);
   console.log(`   data_storage_retention_days: 7`);
+  console.log(`   voice_id: cartesia-Sloane (switched from openai-Grace for warmer, more natural tone)`);
+  console.log(`   responsiveness: 0.9 (reduced from 1.0 to fix sentence-start glitch)`);
+  console.log(`   interruption_sensitivity: 0.8 (reduced from 1.0 to reduce false interruptions)`);
+  console.log(`   post_call_analysis_schema: 6 fields (visitTimeframe, appointmentIntent, callerName, reasonForVisit, smsConsent, callbackRequested)`);
   console.log('\nChanges are live immediately.');
 }
 
