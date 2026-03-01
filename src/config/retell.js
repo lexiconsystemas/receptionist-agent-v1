@@ -36,29 +36,52 @@ const retellClient = axios.create({
  * @returns {boolean} Whether signature is valid
  */
 function validateWebhookSignature(payload, signature) {
-  if (!RETELL_WEBHOOK_SECRET) {
-    logger.warn('RETELL_WEBHOOK_SECRET not configured - skipping signature validation');
-    return true; // Skip validation if secret not configured (dev mode)
+  if (!RETELL_API_KEY) {
+    logger.warn('RETELL_API_KEY not configured - skipping signature validation');
+    return true;
   }
 
   try {
-    const expectedSignature = crypto
-      .createHmac('sha256', RETELL_WEBHOOK_SECRET)
-      .update(payload, 'utf8')
-      .digest('base64');
+    // RetellAI signature format: v={timestamp},d={hmac_sha256_hex}
+    // Key  = RETELL_API_KEY
+    // Input = body_string + timestamp  (concatenated, no separator)
+    // See: https://github.com/RetellAI/retell-typescript-sdk/blob/main/src/lib/webhook_auth.ts
+    const match = /v=(\d+),d=(.*)/.exec(signature || '');
+    if (!match) {
+      logger.warn('RetellAI webhook signature format invalid');
+      return false;
+    }
 
-    const sigBuffer = Buffer.from(signature || '', 'utf8');
-    const expectedBuffer = Buffer.from(expectedSignature, 'utf8');
+    const poststamp = Number(match[1]);
+    const postDigest = match[2];
+    const FIVE_MINUTES = 5 * 60 * 1000;
 
-    if (sigBuffer.length !== expectedBuffer.length) {
-      logger.warn('RetellAI webhook signature length mismatch', {
-        received: sigBuffer.length,
-        expected: expectedBuffer.length
+    if (Math.abs(Date.now() - poststamp) > FIVE_MINUTES) {
+      logger.warn('RetellAI webhook signature timestamp expired', {
+        poststamp,
+        diff: Math.abs(Date.now() - poststamp)
       });
       return false;
     }
 
-    return crypto.timingSafeEqual(sigBuffer, expectedBuffer);
+    // HMAC-SHA256(key=RETELL_API_KEY, data=payload+poststamp), hex-encoded
+    const expectedDigest = crypto
+      .createHmac('sha256', RETELL_API_KEY)
+      .update(payload + poststamp, 'utf8')
+      .digest('hex');
+
+    const postBuf = Buffer.from(postDigest || '', 'utf8');
+    const expectedBuf = Buffer.from(expectedDigest, 'utf8');
+
+    if (postBuf.length !== expectedBuf.length) {
+      logger.warn('RetellAI webhook signature digest length mismatch', {
+        received: postBuf.length,
+        expected: expectedBuf.length
+      });
+      return false;
+    }
+
+    return crypto.timingSafeEqual(postBuf, expectedBuf);
   } catch (error) {
     logger.error('Error validating RetellAI webhook signature', { error: error.message });
     return false;

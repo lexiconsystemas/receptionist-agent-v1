@@ -25,9 +25,11 @@ async function handleWebhook(req, res) {
   const startTime = Date.now();
 
   try {
-    // Validate webhook signature — use raw body bytes to match what RetellAI signed
+    // Validate webhook signature.
+    // RetellAI signs JSON.stringify(body) + timestamp with RETELL_API_KEY.
+    // Use JSON.stringify(req.body) to match what the official Retell SDK does.
     const signature = req.headers['x-retell-signature'];
-    const rawBody = req.rawBody || JSON.stringify(req.body);
+    const rawBody = JSON.stringify(req.body);
 
     if (process.env.NODE_ENV === 'production') {
       if (!retellConfig.validateWebhookSignature(rawBody, signature)) {
