@@ -95,6 +95,11 @@ function validateCallerInfo(data) {
     data.callbackRequested || data.callback_requested || data.callback
   );
 
+  // Patient date of birth — stored for Google Calendar only, never sent to Keragon (PHI)
+  result.patientDob = validateDob(
+    data.patientDob || data.patient_dob || data.dob || data.date_of_birth || data.dateOfBirth
+  );
+
   result.isValid = errors.length === 0;
   result.validationErrors = errors;
 
@@ -286,6 +291,46 @@ function validateAppointmentType(type) {
 }
 
 /**
+ * Validate and normalize a date of birth string
+ * Accepts MM/DD/YYYY, YYYY-MM-DD, or MM-DD-YYYY; returns MM/DD/YYYY or null
+ * @param {string} raw - Raw DOB input
+ * @returns {string|null} Normalized DOB or null
+ */
+function validateDob(raw) {
+  if (!raw || typeof raw !== 'string') return null;
+  const s = raw.trim();
+
+  // MM/DD/YYYY
+  let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) {
+    const [, mo, day, yr] = m.map(Number);
+    if (mo >= 1 && mo <= 12 && day >= 1 && day <= 31 && yr >= 1900 && yr <= 2100) {
+      return `${String(mo).padStart(2,'0')}/${String(day).padStart(2,'0')}/${yr}`;
+    }
+  }
+
+  // YYYY-MM-DD
+  m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (m) {
+    const [, yr, mo, day] = m.map(Number);
+    if (mo >= 1 && mo <= 12 && day >= 1 && day <= 31 && yr >= 1900 && yr <= 2100) {
+      return `${String(mo).padStart(2,'0')}/${String(day).padStart(2,'0')}/${yr}`;
+    }
+  }
+
+  // MM-DD-YYYY
+  m = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  if (m) {
+    const [, mo, day, yr] = m.map(Number);
+    if (mo >= 1 && mo <= 12 && day >= 1 && day <= 31 && yr >= 1900 && yr <= 2100) {
+      return `${String(mo).padStart(2,'0')}/${String(day).padStart(2,'0')}/${yr}`;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Validate call disposition
  * @param {string} disposition - Raw disposition
  * @returns {string} Valid disposition
@@ -376,6 +421,7 @@ module.exports = {
   validateTimeframe,
   validateAppointmentId,
   validateAppointmentType,
+  validateDob,
   validateDisposition,
   validateCallRecord,
   PATIENT_TYPES,

@@ -124,8 +124,11 @@ async function createAppointmentEvent(callLog) {
     const endTime = new Date(startTime.getTime() + 60 * 60 * 1000); // +1 hour
 
     const descriptionLines = [
-      `Reason: ${callLog.reason_for_visit || 'Not specified'}`,
+      `Name: ${callerName}`,
+      `DOB: ${callLog.patient_dob || 'Not provided'}`,
       `Phone: ${callLog.caller_id || 'Unknown'}`,
+      `Reason: ${callLog.reason_for_visit || 'Not specified'}`,
+      `Visit timeframe: ${callLog.intended_visit_timeframe || 'Not specified'}`,
       `Patient type: ${callLog.patient_type || 'Unknown'}`,
       `Call ID: ${callLog.call_id}`
     ];

@@ -183,7 +183,7 @@ function detectEmergency(callData) {
     'chest pain', 'chest pressure',
     'can\'t breathe', 'difficulty breathing', 'shortness of breath',
     'stroke', 'facial drooping', 'slurred speech', 'arm weakness',
-    'bleeding', 'severe bleeding', 'uncontrolled bleeding',
+    'severe bleeding', 'uncontrolled bleeding', 'bleeding won\'t stop', 'can\'t stop bleeding',
     'unconscious', 'passed out', 'fainted', 'loss of consciousness',
     'seizure', 'convulsion',
     'head injury', 'hit my head',

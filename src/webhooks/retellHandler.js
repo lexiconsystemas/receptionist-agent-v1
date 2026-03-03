@@ -147,6 +147,8 @@ async function handleCallEnded(event) {
     appointment_type: callerInfo.appointmentType || null,
     callback_requested: callerInfo.callbackRequested || false,
     sms_consent_explicit: callerInfo.smsConsent,
+    // PHI — used for Google Calendar only; scrubbed before any Keragon log
+    patient_dob: callerInfo.patientDob || null,
     disposition,
     emergency_trigger: emergencyCheck.isEmergency,
     spam_flag: spamCheck.isSpam,
@@ -166,10 +168,11 @@ async function handleCallEnded(event) {
     isSpam: spamCheck.isSpam
   });
 
-  // Log to Keragon
+  // Log to Keragon — scrub patient_dob (PHI; not sent to third-party systems)
+  const { patient_dob: _dob, ...callLogForKeragon } = callLog; // eslint-disable-line no-unused-vars
   await callLogger.logToKeragon({
     event: 'call_ended',
-    ...callLog
+    ...callLogForKeragon
   });
 
   // ── Google Calendar: create event for new soft-scheduled appointments ──────
