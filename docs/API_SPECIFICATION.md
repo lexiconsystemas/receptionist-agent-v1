@@ -4,6 +4,7 @@
 
 | Version | Date | Author | Status |
 |---------|------|--------|--------|
+| 2.1 | 2026-03-05 | Dev Team | Updated — patientDob, Notifyre SMS |
 | 2.0 | 2026-02-25 | Dev Team | Production Ready |
 
 ---
@@ -27,7 +28,7 @@ Incoming webhooks are authenticated using HMAC-SHA256 signatures or provider-spe
 
 ```
 X-Retell-Signature: sha256=SIGNATURE      ← RetellAI events
-X-SignalWire-Signature: SIGNATURE          ← SignalWire voice/SMS (standard SignalWire validation)
+X-Notifyre-Signature: SIGNATURE           ← Notifyre SMS (Delivery 2; format TBD at integration)
 ```
 
 > **Note:** Keragon sends outbound (agent → Keragon). There is no inbound Keragon signature on the `/webhook/keragon/callback` endpoint in the current implementation.
@@ -139,7 +140,8 @@ Processes RetellAI webhook events for call lifecycle management.
     "visit_timeframe": "this evening 6-7pm",
     "appointment_type": "new|change|cancel",
     "existing_appointment_id": "appt_abc123",
-    "sms_consent_explicit": true
+    "sms_consent_explicit": true,
+    "patientDob": "1985-04-12"
   }
 }
 ```
@@ -200,47 +202,21 @@ Handles call status updates from RetellAI.
 
 ---
 
-### POST /webhook/signalwire/voice
+### POST /webhook/sms/status
 
-Processes incoming SignalWire voice calls and routes to RetellAI.
-
-**Authentication**
-- Required: `X-SignalWire-Signature` header (standard SignalWire request validation)
-
-**Request Body** (Form data — standard SignalWire format)
-```
-From: +15551234567
-To: +15559876543
-CallSid: CA1234567890abcdef
-Direction: inbound
-```
-
-**Response** (LaML — compatible with SignalWire/TwiML)
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Connect>
-    <Stream url="wss://api.retellai.com/call/websocket" />
-  </Connect>
-</Response>
-```
-
----
-
-### POST /webhook/signalwire/sms-status
-
-Handles SMS delivery status callbacks from SignalWire.
+Handles SMS delivery status callbacks. Will be configured with Notifyre at Delivery 2 integration.
 
 **Authentication**
-- Required: `X-SignalWire-Signature` header
+- Notifyre signature header (format TBD at Delivery 2 integration)
 
-**Request Body** (Form data — standard SignalWire format)
-```
-MessageSid: SM1234567890abcdef
-MessageStatus: queued|sent|delivered|undelivered|failed
-To: +15551234567
-ErrorCode: 21614
-ErrorMessage: Message blocked
+**Request Body**
+```json
+{
+  "message_id": "notifyre_msg_abc123",
+  "status": "queued|sent|delivered|undelivered|failed",
+  "to": "+15551234567",
+  "error_code": "optional"
+}
 ```
 
 **Response**
@@ -254,25 +230,24 @@ HTTP 200 OK
 
 ### POST /webhook/sms/inbound
 
-Processes inbound SMS replies from patients. Called by SignalWire when a patient responds to a post-call follow-up SMS.
+Processes inbound SMS replies from patients. Will be called by Notifyre at Delivery 2 when a patient responds to a post-call follow-up SMS.
 
 **Authentication**
-- Required: `X-SignalWire-Signature` header (validated in `src/index.js` middleware)
+- Notifyre signature validation (Delivery 2; endpoint implemented and ready)
 
-**Request Body** (Form data — standard SignalWire format)
+**Request Body** (Form data — Notifyre format at Delivery 2; exact field names TBD)
 ```
 From: +15551234567
 To: +15559876543
 Body: 4
-SmsSid: SM1234567890abcdef
-MessageSid: SM1234567890abcdef
+MessageId: notifyre_msg_123
 ```
 
 **Response**
 ```
 HTTP 200 OK
 ```
-_(Response is sent immediately before processing to satisfy SignalWire's fast-acknowledgement requirement.)_
+_(Response is sent immediately before processing to satisfy fast-acknowledgement requirement.)_
 
 **Reply Classification**
 
@@ -316,10 +291,11 @@ Inbound messages are classified into four types:
 }
 ```
 
-**SignalWire Configuration for Inbound SMS**
+**Notifyre Configuration for Inbound SMS (Delivery 2)**
 ```
 Inbound SMS webhook URL: https://api.yourclinic.com/webhook/sms/inbound
 Method: POST
+(Configure in Notifyre dashboard at Delivery 2 integration)
 ```
 
 ---
@@ -387,9 +363,9 @@ The agent POSTs to four Keragon workflow webhook URLs. These are configured via 
 }
 ```
 
-### SignalWire SMS
+### SMS (Notifyre — Delivery 2; mock mode for Delivery 1)
 
-Outbound SMS is sent via `@signalwire/compatibility-api` (Twilio-compatible SDK). The sending number is `SIGNALWIRE_FROM_NUMBER`.
+Outbound SMS will be sent via Notifyre at Delivery 2. For Delivery 1, all SMS runs in mock mode (`MOCK_MODE=true`, `SMS_ENABLED=false`). The code stub in `smsProvider.js` uses a Twilio SDK as a placeholder only — Notifyre is the actual provider.
 
 **Triggers for outbound SMS:**
 - Post-call follow-up (consent-gated, EN/ES)
@@ -453,7 +429,7 @@ Complete call record logged to Keragon W1 and cached in Redis.
 }
 ```
 
-**New fields (v2.0):**
+**New fields (v2.1):**
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -461,6 +437,8 @@ Complete call record logged to Keragon W1 and cached in Redis.
 | `existing_appointment_id` | string\|null | ID of existing Redis-scheduled appointment (for change/cancel) |
 | `sms_consent_explicit` | boolean | True only if patient explicitly gave consent during the call |
 | `gcal_event_id` | string\|null | Google Calendar event ID (set after successful calendar write) |
+
+> **patientDob note:** DOB is captured from RetellAI `extracted_data.patientDob` and written to the Google Calendar event description for staff identity reference. It is scrubbed before any Keragon write and is NOT stored in the Call Record above. See the inbound webhook `extracted_data` schema above for where it enters the system.
 
 **Disposition Values**
 
@@ -628,31 +606,23 @@ X-RateLimit-Reset: 1643145600
 
 ## Webhook Integration Guide
 
-### SignalWire Configuration
+### Notifyre SMS Configuration (Delivery 2)
 
-#### Voice Webhook
-```
-URL: https://api.yourclinic.com/webhook/signalwire/voice
-Method: POST (form data)
-```
-
-Configure in the SignalWire dashboard under Phone Numbers → [your number] → Voice & Fax → "A call comes in" → Webhook.
-
-#### SMS Status Callback
-```
-URL: https://api.yourclinic.com/webhook/signalwire/sms-status
-Method: POST (form data)
-```
-
-Configure in the SignalWire dashboard under Messaging → Campaigns → Status Callback URL.
+Notifyre SMS integration is held for Delivery 2. The following endpoints are implemented and ready:
 
 #### Inbound SMS Webhook
 ```
 URL: https://api.yourclinic.com/webhook/sms/inbound
-Method: POST (form data)
+Method: POST
 ```
+Configure in Notifyre dashboard at Delivery 2 integration.
 
-Configure in the SignalWire dashboard under Phone Numbers → [your number] → Messaging → "A message comes in" → Webhook.
+#### SMS Status Callback
+```
+URL: https://api.yourclinic.com/webhook/sms/status
+Method: POST
+```
+Configure in Notifyre dashboard at Delivery 2 integration.
 
 ---
 
@@ -702,20 +672,9 @@ const signature = req.headers['x-retell-signature'];
 const isValid = validateRetellSignature(payload, signature, process.env.RETELL_WEBHOOK_SECRET);
 ```
 
-#### SignalWire Signature (Node.js)
+#### Notifyre SMS Signature (Delivery 2)
 
-SignalWire uses the standard Twilio-compatible request validation. Use the `@signalwire/compatibility-api` or `twilio` validator:
-
-```javascript
-const { validateRequest } = require('@signalwire/compatibility-api');
-
-const isValid = validateRequest(
-  process.env.SIGNALWIRE_AUTH_TOKEN,
-  req.headers['x-signalwire-signature'],
-  `https://api.yourclinic.com${req.originalUrl}`,
-  req.body
-);
-```
+Notifyre signature validation will be implemented at Delivery 2 integration. The `/webhook/sms/inbound` endpoint is ready to receive Notifyre webhooks — signature validation logic will be added when Notifyre credentials and signature format are confirmed.
 
 ---
 
@@ -794,6 +753,13 @@ curl http://localhost:3000/health
 
 ## Changelog
 
+### v2.1 (2026-03-05)
+- Added `patientDob` to `extracted_data` in RetellAI webhook request body schema
+- Replaced SignalWire endpoint docs with Notifyre (Delivery 2) — `/webhook/sms/status`, `/webhook/sms/inbound`
+- Updated Outbound API Calls — SMS is Notifyre (mock mode for Delivery 1)
+- Removed SignalWire signature validation code sample; added Notifyre note
+- Added patientDob scrubbing note in Call Record data model
+
 ### v2.0 (2026-02-25)
 - Added `POST /webhook/sms/inbound` endpoint with full rating/opt-out/freetext documentation
 - Added `appointment_type`, `existing_appointment_id`, `sms_consent_explicit`, `gcal_event_id` to Call Record model
@@ -823,7 +789,7 @@ curl http://localhost:3000/health
 
 ---
 
-**API Version**: 2.0
+**API Version**: 2.1
 **Base URL**: https://api.yourclinic.com
-**Documentation Version**: 2.0
-**Last Updated**: 2026-02-25
+**Documentation Version**: 2.1
+**Last Updated**: 2026-03-05

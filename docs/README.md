@@ -8,12 +8,14 @@ Welcome to the official documentation for the Receptionist Agent V1, an enterpri
 
 The Receptionist Agent V1 is built with a modular, scalable architecture that integrates multiple AI and telephony services to provide seamless after-hours call handling.
 
+> **Delivery 1 scope:** RetellAI, Keragon, and Google Calendar are live and configured. SMS (Notifyre) is held for Delivery 2 — SMS runs in mock mode for Delivery 1. Notifyre integration will be completed at that milestone.
+
 ### Core Components
 
-- **Voice Processing**: RetellAI for natural speech recognition and synthesis
-- **AI Intelligence**: Hathr.ai healthcare-focused LLM for conversation management
-- **Telephony**: SignalWire for inbound/outbound calls and SMS messaging
-- **Automation**: Keragon for healthcare workflow orchestration
+- **Voice Agent**: RetellAI — inbound PSTN calls, STT/TTS, conversation logic (agent name: Grace)
+- **AI Intelligence**: Hathr.ai (healthcare LLM — stubbed, not active; conversation logic runs in RetellAI)
+- **SMS**: Notifyre — post-call follow-up, reminders, ratings (Delivery 2; mock mode for Delivery 1)
+- **Automation**: Keragon for healthcare workflow orchestration (4 live workflows)
 - **Backend**: Node.js/Express with enterprise-grade security and scalability
 - **Caching**: Redis for session management and performance optimization
 
@@ -22,9 +24,9 @@ The Receptionist Agent V1 is built with a modular, scalable architecture that in
 | Layer | Technology | Purpose |
 |-------|------------|---------|
 | **Frontend** | Voice Interface | Patient interaction |
-| **Voice AI** | RetellAI | Speech processing |
-| **LLM** | Hathr.ai | Conversation logic |
-| **Telephony** | SignalWire | Calls & SMS |
+| **Voice AI** | RetellAI (agent: Grace) | PSTN, speech processing, call flow |
+| **LLM** | Hathr.ai (stubbed) | Not active — logic runs in RetellAI |
+| **SMS** | Notifyre (Delivery 2) | Post-call SMS, reminders, ratings |
 | **Automation** | Keragon | Workflows |
 | **Backend** | Node.js/Express | API & Logic |
 | **Cache** | Redis | Sessions |
@@ -92,7 +94,7 @@ Detailed technical architecture documentation including system design and data f
 Current build status for all integrations, remaining items before acceptance, and the access map required before final payment (§6).
 
 **Key Sections:**
-- Per-integration status (RetellAI, SignalWire, Keragon, Google Calendar, Scheduler)
+- Per-integration status (RetellAI, Notifyre/SMS, Keragon, Google Calendar, Scheduler)
 - What still needs client credentials
 - Remaining items before walkthrough and acceptance
 - Access map (§6 — required before final payment)
@@ -103,10 +105,10 @@ Current build status for all integrations, remaining items before acceptance, an
 
 ### Prerequisites
 
-- **Node.js**: 18.0+ 
+- **Node.js**: 18.0+
 - **Docker**: 20.10+ (for containerized deployment)
 - **Redis**: 7.0+ (included in Docker Compose)
-- **API Credentials**: RetellAI, SignalWire, Keragon, Hathr.ai
+- **API Credentials**: RetellAI, Keragon, Google Calendar (Notifyre for SMS — Delivery 2)
 
 ### Installation
 
@@ -155,18 +157,16 @@ docker-compose logs -f app
 # Core System
 NODE_ENV=production
 PORT=3000
-MOCK_MODE=false
+MOCK_MODE=true          # Keep true for Delivery 1; set false when Notifyre is live
 
-# RetellAI (voice + telephony)
+# RetellAI (voice + call flow)
 RETELL_API_KEY=your_retell_api_key
 RETELL_AGENT_ID=your_agent_id
 RETELL_WEBHOOK_SECRET=your_webhook_secret
 
-# SignalWire (SMS — NOT Twilio)
-SIGNALWIRE_PROJECT_ID=your_signalwire_project_id
-SIGNALWIRE_API_TOKEN=your_api_token
-SIGNALWIRE_SPACE_URL=yourspace.signalwire.com
-SIGNALWIRE_FROM_NUMBER=+1xxxxxxxxxx
+# SMS — Notifyre (Delivery 2)
+# Full Notifyre integration held for Delivery 2. SMS_ENABLED=false for Delivery 1.
+SMS_ENABLED=false
 
 # Keragon — 4 live workflow webhooks
 KERAGON_WEBHOOK_URL=https://webhooks.us-1.keragon.com/v1/workflows/9f74dcab-.../signal
@@ -282,10 +282,11 @@ Events: call.started, call.ended, call.analyzed
 Secret: RETELL_WEBHOOK_SECRET
 ```
 
-#### SignalWire
+#### SMS — Notifyre (Delivery 2)
 ```
-Voice URL: https://api.yourclinic.com/webhook/signalwire/voice
-SMS URL: https://api.yourclinic.com/webhook/signalwire/sms-status
+Inbound SMS URL: https://api.yourclinic.com/webhook/sms/inbound
+Status callback:  https://api.yourclinic.com/webhook/sms/status
+(Configure in Notifyre dashboard at Delivery 2 integration)
 ```
 
 #### Keragon
@@ -393,21 +394,24 @@ USE_MOCKS=true
 
 ## 📈 Roadmap
 
-### Current Version: v1.0 (2/25/2026)
+### Current Version: v1.1 (3/5/2026)
 
-**Features — All Implemented:**
-- ✅ After-hours call handling (RetellAI — live and tested)
-- ✅ Emergency detection and 911 routing (20+ keyword categories)
+**Features — Delivery 1 (Live):**
+- ✅ After-hours call handling (RetellAI — agent name: Grace, live and tested)
+- ✅ Emergency detection and 911 routing (20+ keyword categories; Ambiguous Symptom Protocol for borderline cases)
 - ✅ Spam call filtering (multi-factor scoring)
 - ✅ Soft scheduling — 1-hour windows logged to Google Calendar
+- ✅ Patient date of birth (DOB) captured and logged to Google Calendar event description
 - ✅ Appointment change / cancel flow (cancel reminder + SMS staff alert)
-- ✅ SMS follow-up messaging (consent-gated, bilingual EN/ES)
-- ✅ Day-before + 1-hour-before appointment SMS reminders (cron-based)
-- ✅ Rating SMS (1–5 scale, low-score follow-up ≤3)
+- ✅ SMS follow-up messaging (consent-gated, bilingual EN/ES) — **mock mode for Delivery 1**
+- ✅ Day-before + 1-hour-before appointment SMS reminders (cron-based) — **mock mode for Delivery 1**
+- ✅ Rating SMS (1–5 scale, low-score follow-up ≤3) — **mock mode for Delivery 1**
 - ✅ Keragon logging — 4 live workflows (call logs, emergencies, SMS events, edge cases)
 - ✅ Staff email alerts via SendGrid (low ratings, SMS failures, freetext replies)
 - ✅ PHI auto-deletion — 7-day cron, HIPAA-conscious
 - ✅ HIPAA-conscious design with field sanitization
+- ⏳ `schedule_soft_appointment` deactivated — visit timeframes captured via `log_call_information` (placeholder URL removed)
+- ⏳ SMS/Notifyre full integration — Delivery 2
 
 ### Planned Enhancements
 
@@ -443,10 +447,9 @@ This software is licensed under the **UNLICENSED** proprietary license agreement
 
 | Version | Date | Changes |
 |---------|------|---------|
-| **1.0** | 2026-01-25 | Initial production release |
-| **0.9** | 2026-01-20 | Beta testing complete |
-| **0.8** | 2026-01-15 | Feature complete |
-| **0.5** | 2026-01-01 | Alpha release |
+| **1.1** | 2026-03-05 | DOB capture pipeline; `schedule_soft_appointment` deactivated; Ambiguous Symptom Protocol (bleeding/fever); after-hours awareness rule; Grace persona; SMS provider → Notifyre (D2); speech tuning |
+| **1.0** | 2026-02-25 | Scheduler, rating SMS, PHI deletion, Keragon 4-workflow routing, SignalWire migration, inboundSmsHandler |
+| **0.5** | 2026-01-25 | Initial production release |
 
 ---
 
@@ -469,8 +472,8 @@ This software is licensed under the **UNLICENSED** proprietary license agreement
 
 ---
 
-**Last Updated**: February 25, 2026
-**Document Version**: 2.0
+**Last Updated**: March 5, 2026
+**Document Version**: 2.1
 
 ---
 

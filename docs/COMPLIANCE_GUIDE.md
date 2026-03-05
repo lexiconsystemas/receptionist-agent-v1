@@ -7,6 +7,7 @@
 | 1.0 | 2026-01-25 | Compliance Team | Approved |
 | 1.1 | 2026-01-26 | Legal Counsel | Reviewed |
 | 1.2 | 2026-02-25 | Dev Team | Updated — PHI auto-deletion, rating SMS, Calendar data note, BAA status |
+| 1.3 | 2026-03-05 | Dev Team | Updated — DOB capture classification, Notifyre replaces SignalWire |
 
 ---
 
@@ -65,13 +66,13 @@ Incoming Call → Voice Processing → AI Analysis → Structured Logging → Go
 - ✅ Reason for visit (non-diagnostic)
 - ✅ Intended visit timeframe
 - ✅ Patient type (new/returning)
+- ✅ **Date of birth (DOB)** — collected for patient identity verification during the call. Written to Google Calendar event description only. Scrubbed from all Keragon logs before write. NOT stored in Redis call log or any external system except the Google Calendar event.
 
 **Explicitly NOT Collected**
 - ❌ Social Security Number
-- ❌ Date of Birth
 - ❌ Medical History
 - ❌ Insurance Information
-- ❌ Detailed Symptoms
+- ❌ Detailed Symptoms / Diagnosis
 - ❌ Medication Information
 - ❌ Treatment History
 
@@ -256,12 +257,16 @@ data_collection:
     - phone_number: "E.164 format"
     - reason_for_visit: "string, max 500 chars"
     - visit_timeframe: "string, max 100 chars"
-  
+    - date_of_birth: "string — collected for identity verification only.
+                       Stored in Google Calendar event description.
+                       Scrubbed from all Keragon logs."
+
   prohibited:
     - ssn: "never collected"
-    - date_of_birth: "never collected"
     - medical_history: "never collected"
     - insurance_info: "never collected"
+    - medications: "never collected"
+    - treatment_history: "never collected"
 ```
 
 #### Purpose Limitation
@@ -459,13 +464,13 @@ alerts:
 | Vendor | Service | BAA Status | Notes |
 |--------|---------|------------|-------|
 | **RetellAI** | Voice Processing | **Pending — Arthur to obtain** | `data_storage_setting: basic_attributes_only` — no transcripts or recordings stored. `data_storage_retention_days: 7` — basic metadata auto-deleted. BAA required before go-live. |
-| **SignalWire** | Telephony + SMS | **Pending — Arthur to obtain** | Handles call routing and SMS delivery |
+| **Notifyre** | SMS (Delivery 2) | **Pending — Delivery 2** | Inbound/outbound SMS — not active for Delivery 1. BAA to be obtained before Delivery 2 go-live. |
 | **Keragon** | Workflow Automation + Logging | **Pending — Arthur to obtain** | Receives call logs, SMS events, emergencies |
-| **Google** | Calendar (service account) | **Pending — Arthur to obtain** | Stores limited PHI (name, phone, reason) as calendar events |
+| **Google** | Calendar (service account) | **Pending — Arthur to obtain** | Stores limited PHI (name, phone, reason, DOB) as calendar events. DOB included as of v1.1. |
 | **Hathr.ai** | Healthcare LLM | N/A — not implemented (stubbed) | No data is sent to Hathr.ai in production |
-| **AWS / Cloud Provider** | Infrastructure | Signed (obtain from hosting provider) | Underlying infrastructure BAA |
+| **Railway** | Infrastructure (hosting) | Pending — obtain from Railway | Underlying infrastructure hosting BAA |
 
-> ⚠️ **Action Required (Arthur):** BAAs with RetellAI, SignalWire, Keragon, and Google (Workspace/Calendar) must be executed before production go-live. These vendors process or receive data that may include PHI.
+> ⚠️ **Action Required (Arthur):** BAAs with RetellAI, Notifyre (Delivery 2), Keragon, and Google (Workspace/Calendar) must be executed before production go-live. These vendors process or receive data that may include PHI.
 
 ### Data Processing Agreements
 

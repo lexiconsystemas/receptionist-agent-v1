@@ -1,6 +1,6 @@
 # Implementation Status — Receptionist Agent V1
 
-**As of:** 2/25/2026
+**As of:** 3/5/2026
 **Contract signed:** 2/22/2026 | **Deadline:** ~3/8/2026 (14 days)
 **Tests:** 143/143 passing
 
@@ -12,30 +12,38 @@
 
 ### ✅ RetellAI — Live
 
-- Agent is live and answering calls on the provisioned phone number
-- Verified working by live test call (2/25/2026)
+- Agent is live and answering calls (agent name: **Grace**, ID: `agent_40a6d657cddce372dbbae945e8`)
+- Verified working by live test calls (2/25/2026 + 3/5/2026)
 - Webhook events received: `call_started`, `call_ended`, `call_analyzed`, `transcript_update`
-- Emergency detection wired: 20+ keyword categories → immediate 911 redirect
+- Emergency detection wired: 20+ keyword categories; **Ambiguous Symptom Protocol** added (bleeding/fever follow-up before escalating)
 - Spam detection wired: multi-factor scoring, threshold ≥ 3 = spam
 - Webhook signature validation: production mode enforces HMAC check
 - Multi-call concurrency: handled natively by RetellAI
+- DOB capture: `patientDob` extracted from call, written to Google Calendar, scrubbed from Keragon
+- After-hours awareness: Grace never suggests "today"; redirects vague timing to "tomorrow"
+- `schedule_soft_appointment` **deactivated** — was hitting `placeholder.example.com` (ENOTFOUND DNS error causing call pause). Visit timeframe captured via `log_call_information` at call end.
+- Speech settings: responsiveness 0.95, backchannel_frequency 0.85, backchannel words added
+- 911 pronunciation fix applied
 
 **Still needed:**
-- Spanish language detection in call flow (agent prompt update — not a code change)
-- Explicit in-call SMS opt-in question (agent prompt update)
+- Spanish language detection in call flow (agent prompt — low priority)
+- Fix A: Pause Before Speaking 0s → 1.0s (do in RetellAI dashboard: Speech Settings → Welcome Message → Pause Before Speaking)
 
 ---
 
-### ✅ SignalWire — Wired (needs live creds)
+### ⏳ Notifyre (SMS) — Delivery 2
 
-- `@signalwire/compatibility-api` v3.2.0 integrated in `src/config/smsProvider.js`
-- Mock guard: `USE_MOCKS=true` → uses `mocks/signalwire.mock.js` instead of real API
-- Inbound SMS webhook: `POST /webhook/sms/inbound` — signature validation implemented
-- Outbound: `sendRaw()`, `sendFollowUp()`, `sendCallbackConfirmation()`, `sendEmergencyResources()`, `sendHoursReminder()`, `sendDayBeforeReminder()`, `sendHourBeforeReminder()`
+- SMS provider is **Notifyre** — full integration held for Delivery 2
+- `src/config/smsProvider.js` contains a Twilio SDK stub as a placeholder (functional mock path only)
+- Mock guard: `MOCK_MODE=true` / `SMS_ENABLED=false` → uses mock SMS for Delivery 1
+- All SMS endpoints implemented and ready: `POST /webhook/sms/inbound`, `POST /webhook/sms/status`
+- Outbound SMS methods wired: `sendFollowUp()`, `sendDayBeforeReminder()`, `sendHourBeforeReminder()`, `sendRaw()`, etc.
 - Bilingual (EN + ES): all SMS templates support `locale: 'en' | 'es'`
 
-**Still needed:**
-- Arthur provides: `SIGNALWIRE_PROJECT_ID`, `SIGNALWIRE_API_TOKEN`, `SIGNALWIRE_SPACE_URL`, `SIGNALWIRE_FROM_NUMBER` → enter in `.env`
+**Delivery 2 actions needed:**
+- Replace Twilio stub in `smsProvider.js` with Notifyre SDK/API calls
+- Arthur provides Notifyre API credentials → enter in `.env`
+- Configure inbound SMS webhook URL in Notifyre dashboard → `POST /webhook/sms/inbound`
 
 ---
 
@@ -129,17 +137,17 @@ Emergency detection and conversation logic run inside RetellAI directly. Hathr.a
 
 ## Remaining Items Before Acceptance (§10)
 
-| Item | Owner | Blocker |
+| Item | Owner | Status |
 |------|-------|---------|
-| SignalWire credentials → `.env` | Arthur | — |
-| SendGrid API key → Keragon W1, W3, W4 | Arthur | — |
-| Google Calendar creds → `.env` | Arthur | — |
-| `STAFF_ALERT_PHONE` → `.env` | Arthur | — |
+| Notifyre credentials + integration | Arthur + Simone | ⏳ Delivery 2 |
+| SendGrid API key → Keragon W1, W3, W4 | Arthur | Pending |
+| Google Calendar creds → `.env` | ✅ Arthur | Configured |
+| `STAFF_ALERT_PHONE` → `.env` | Arthur | Pending |
 | Keragon 7-day data retention configured | Arthur | Guide: see `docs/OPERATIONS_MANUAL.md` SOP-006 |
-| RetellAI agent prompt: Spanish detection | ✅ Simone | Done |
-| RetellAI agent prompt: explicit in-call SMS opt-in | ✅ Simone | Done |
-| Documentation package delivered | ✅ Simone | Done |
-| End-to-end live testing | Simone | Needs Arthur's creds |
+| RetellAI agent prompt: Spanish detection | Simone | Pending (low priority) |
+| RetellAI Pause Before Speaking → 1.0s | Arthur or Simone | ⚠️ Do in RetellAI dashboard before go-live |
+| Documentation package delivered | ✅ Simone | Done (3/5/2026) |
+| End-to-end live testing | Simone | Needs Railway URL + STAFF_ALERT_PHONE |
 | Mandatory walkthrough with Arthur | Both | Needs live testing first |
 | Access map (§6) | Simone | Complete before final payment |
 
@@ -150,9 +158,9 @@ Emergency detection and conversation logic run inside RetellAI directly. Hathr.a
 | System | Account Owner | Simone's Access Level | Revocable? |
 |--------|--------------|----------------------|------------|
 | RetellAI | Arthur Garnett | API key + dashboard access (temporary) | Yes — remove from workspace |
-| SignalWire | Arthur Garnett | API token (temporary) | Yes — rotate/revoke token |
+| Notifyre | Arthur Garnett | API credentials (Delivery 2 — temporary) | Yes — rotate/revoke |
 | Keragon | Arthur Garnett | Workflow editor access (temporary) | Yes — remove from workspace |
 | Google Workspace / Calendar | Arthur Garnett | Service account (temporary) | Yes — delete service account |
-| Server / hosting | Arthur Garnett | Deploy access (temporary) | Yes — remove SSH key / access |
+| Server / hosting (Railway) | Arthur Garnett | Deploy access (temporary) | Yes — remove access |
 
 **Contractor (Simone Lawson) must not retain any credentials, API keys, or system access after project completion per §6 of the contract.**

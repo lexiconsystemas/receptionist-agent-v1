@@ -1,7 +1,7 @@
 # Receptionist Agent V1 — Operations Manual
 
-**Last updated:** 2/25/2026
-**Version:** 2.0 — Updated for SignalWire, Google Calendar, 4 Keragon workflows, scheduler
+**Last updated:** 3/5/2026
+**Version:** 2.1 — Notifyre replaces SignalWire; SMS mock mode for Delivery 1; DOB capture added; Ambiguous Symptom Protocol
 
 ---
 
@@ -11,8 +11,8 @@
 
 | Component | Technology | Role |
 |-----------|------------|------|
-| **Voice + Telephony** | RetellAI | STT/TTS, PSTN, multi-call concurrency |
-| **SMS** | SignalWire (`@signalwire/compatibility-api` v3.2.0) | Inbound/outbound SMS |
+| **Voice + Telephony** | RetellAI (agent: Grace) | STT/TTS, PSTN, multi-call concurrency |
+| **SMS** | Notifyre (Delivery 2; mock mode D1) | Inbound/outbound SMS |
 | **Automation & Logging** | Keragon (4 live workflows) | Workflow orchestration, staff email alerts |
 | **Calendar** | Google Calendar (service account) | Staff-reference scheduling events |
 | **Scheduler** | node-cron (in-process) | SMS reminders + PHI auto-deletion |
@@ -24,7 +24,7 @@
 | Service | Criticality | Fallback |
 |---------|-------------|----------|
 | **RetellAI** | Critical | Mock mode (dev/test only) |
-| **SignalWire** | High | Calls still logged; SMS queued/dropped |
+| **Notifyre** | High (Delivery 2) | Mock mode for Delivery 1; SMS_ENABLED=false |
 | **Keragon** | High | Errors logged locally; non-fatal |
 | **Google Calendar** | Low | Non-fatal; call flow continues without it |
 | **Redis** | High | In-memory cache fallback (limited) |
@@ -84,10 +84,12 @@ Once the server is running and credentials are configured, the following are ful
 
 ### SOP-001: System Startup
 
+**Delivery 1 note:** SMS is in mock mode for Delivery 1 (`MOCK_MODE=true`, `SMS_ENABLED=false`). No real SMS will be sent until Notifyre is integrated at Delivery 2.
+
 **Pre-startup checks:**
 ```bash
 # Verify environment variables are set
-grep -E "(RETELL_API_KEY|SIGNALWIRE|KERAGON_WEBHOOK|GOOGLE_CALENDAR|STAFF_ALERT)" .env
+grep -E "(RETELL_API_KEY|KERAGON_WEBHOOK|GOOGLE_CALENDAR|STAFF_ALERT)" .env
 
 # Check Redis connectivity
 redis-cli -h localhost -p 6379 ping
@@ -216,8 +218,8 @@ curl -X POST $KERAGON_WEBHOOK_URL \
      -H "Content-Type: application/json" \
      -d '{"event":"ping","test":true}'
 
-# 5. Check SignalWire status
-curl -I https://api.signalwire.com
+# 5. Check SMS provider status (Delivery 2 — Notifyre)
+# SMS is in mock mode for Delivery 1; skip this check until Notifyre is configured
 ```
 
 **Common fixes:**
@@ -334,7 +336,7 @@ Restart server. `isConfigured()` returns false; no calendar events created, no e
 
 #### Emergency credential rotation
 If API credentials are compromised:
-1. Rotate key in the provider dashboard (RetellAI / SignalWire / Keragon)
+1. Rotate key in the provider dashboard (RetellAI / Notifyre / Keragon)
 2. Update `.env` with new key
 3. `docker compose restart app`
 4. Verify health endpoint returns healthy
@@ -419,6 +421,17 @@ A Business Associate Agreement with RetellAI **must be signed before production 
 
 ## Troubleshooting Guide
 
+### Behavior note: Bleeding / Fever follow-up before emergency
+
+Grace now asks ONE follow-up question before escalating ambiguous symptoms to emergency mode:
+- **Bleeding:** If caller says "I'm bleeding" or "bleeding a lot" without severity context → Grace asks: "Is it severe or uncontrolled — like it won't stop on its own?" Only escalates if confirmed.
+- **Fever:** If caller says "I have a fever" without high-severity indicators → Grace asks: "How high is the fever, and is the person alert and responsive?" Only escalates for very high fever (>104°F), seizure, confusion, or unresponsive person.
+- **Mild fever, nausea, vomiting, general pain, dizziness alone** → treated as urgent care visit reasons, NOT emergency. Grace proceeds with normal intake.
+
+This is expected behavior. If Grace is escalating too aggressively or not escalating when it should, review the Ambiguous Symptom Protocol section in the RetellAI LLM prompt.
+
+---
+
 ### Issue: Calls not being logged in Keragon
 
 **Check:**
@@ -443,22 +456,24 @@ curl -X POST "https://webhooks.us-1.keragon.com/v1/workflows/9f74dcab-6aa2-4615-
 
 ### Issue: SMS not being sent
 
-**Check:**
+**Delivery 1:** SMS runs in mock mode by design (`MOCK_MODE=true`, `SMS_ENABLED=false`). SMS will be active after Notifyre integration at Delivery 2. Check logs for `[MOCK] SMS sent` entries to confirm mock is working.
+
+**Check (Delivery 2 onwards):**
 ```bash
 # Is SMS enabled?
-grep "SMS_ENABLED" .env    # should be 'true'
+grep "SMS_ENABLED" .env    # should be 'true' for D2
 
-# Are SignalWire credentials set?
-grep "SIGNALWIRE" .env
+# Are Notifyre credentials set?
+grep -E "(NOTIFYRE|SMS_FROM_NUMBER)" .env
 
 # Check logs for SMS errors
-docker compose logs app | grep -E "(SMS|sms|SignalWire)"
+docker compose logs app | grep -E "(SMS|sms|MOCK)"
 ```
 
-**Common causes:**
+**Common causes (Delivery 2):**
 - `SMS_ENABLED=false` — set to `true` and restart
-- SignalWire credentials not set in `.env`
-- SignalWire from-number not configured in `SIGNALWIRE_FROM_NUMBER`
+- Notifyre credentials not set in `.env`
+- `SMS_FROM_NUMBER` not configured
 - Call duration < 30 seconds (implied consent threshold — no SMS sent for very short calls)
 - Caller explicitly declined SMS (`sms_consent_explicit: false`)
 
@@ -516,7 +531,7 @@ docker compose logs app | grep "Staff appointment alert"
 **Common causes:**
 - `STAFF_ALERT_PHONE` not set in `.env`
 - Phone number not in E.164 format
-- SignalWire credentials not configured
+- SMS not configured (Notifyre — Delivery 2; SMS_ENABLED=false for D1)
 - RetellAI agent not extracting `appointmentIntent: cancel/change` from call (agent prompt issue)
 
 ---
@@ -563,7 +578,7 @@ redis-cli FLUSHDB
 ### Weekly
 - [ ] Review all 4 Keragon workflow run histories for anomalies
 - [ ] Check Google Calendar — confirm 1-hr events are appearing for scheduled calls
-- [ ] Verify SignalWire from-number is still active and not suspended
+- [ ] Verify SMS provider status (Notifyre — applicable from Delivery 2)
 - [ ] Confirm Redis memory usage is healthy (`redis-cli info memory`)
 - [ ] Review staff alert SMS history for appointment changes — follow up any unresolved ones
 
@@ -583,7 +598,7 @@ redis-cli FLUSHDB
 | **Client (Arthur Garnett)** | Clinic operations email/phone |
 | **Contractor (Simone Lawson)** | Primary support contact |
 | **RetellAI Support** | https://docs.retellai.com / support@retellai.com |
-| **SignalWire Support** | https://signalwire.com/support |
+| **Notifyre Support** | https://notifyre.com.au/support (Delivery 2) |
 | **Keragon Support** | https://app.keragon.com (in-app chat) |
 
 ---

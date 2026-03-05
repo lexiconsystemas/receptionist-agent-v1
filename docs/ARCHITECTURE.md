@@ -1,7 +1,7 @@
 # System Architecture — AI Voice Receptionist
 
-**Last updated:** 2/25/2026
-**Status:** Production-ready (mock mode active until client credentials supplied)
+**Last updated:** 3/5/2026
+**Status:** ~82% scope-complete. All services wired. Google Calendar credentials configured. SMS mock mode for Delivery 1 (Notifyre — Delivery 2).
 
 ---
 
@@ -9,8 +9,8 @@
 
 | Component | Technology | Purpose |
 |-----------|------------|---------|
-| **Voice + Telephony** | RetellAI | Voice synthesis, STT, PSTN, multi-call concurrency |
-| **SMS** | SignalWire (`@signalwire/compatibility-api` v3.2.0) | Inbound/outbound SMS — post-call follow-ups, reminders, ratings |
+| **Voice + Telephony** | RetellAI (agent: Grace) | Voice synthesis, STT, PSTN, multi-call concurrency |
+| **SMS** | Notifyre (Delivery 2) | Inbound/outbound SMS — post-call follow-ups, reminders, ratings. Mock mode for Delivery 1. |
 | **Automation & Logging** | Keragon (4 live workflows) | Workflow orchestration, call logging, staff alerts |
 | **Calendar** | Google Calendar (service account) | 1-hour soft-schedule events visible to clinic staff |
 | **Scheduling** | node-cron (in-process) | Appointment SMS reminders + HIPAA PHI auto-deletion |
@@ -18,6 +18,8 @@
 | **Cache** | Redis (ioredis) | Appointment store, reminder state, rate limiting |
 
 > **Note:** Hathr.ai is stubbed in code (`mocks/hathr.mock.js`) — not active in production. Emergency detection and conversation logic run inside RetellAI directly.
+>
+> **SMS Note:** The Twilio SDK stub in `src/config/smsProvider.js` is a temporary code placeholder — the named SMS provider is **Notifyre**, integrated at Delivery 2. All SMS runs in mock mode for Delivery 1 (`MOCK_MODE=true`, `SMS_ENABLED=false`).
 
 ---
 
@@ -61,7 +63,7 @@
 │    │         └───────────────────▼─────────────────────┘               │    │
 │    │                       SERVICES LAYER                               │    │
 │    │  • callLogger.js        — Route events to Keragon workflows       │    │
-│    │  • smsService.js        — Post-call SMS via SignalWire            │    │
+│    │  • smsService.js        — Post-call SMS via Notifyre (D2/mock D1) │    │
 │    │  • schedulerService.js  — Reminder crons + PHI auto-deletion     │    │
 │    │  • googleCalendarService.js — Create 1-hr staff reference events  │    │
 │    └──────────────────────────┬───────────────────────────────────────┘    │
@@ -74,16 +76,17 @@
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  ┌──────────────────────┐  ┌───────────────────┐  ┌──────────────────┐   │
-│  │   SIGNALWIRE (SMS)   │  │     KERAGON        │  │ GOOGLE CALENDAR  │   │
-│  │                      │  │  4 Live Workflows  │  │ (service acct)   │   │
-│  │  Outbound:           │  │                    │  │                  │   │
-│  │  • Follow-up SMS     │  │  W1: call_log      │  │  Write-only:     │   │
-│  │  • Day-before remind │  │  W2: emergency     │  │  1-hour events   │   │
-│  │  • 1-hr reminder     │  │  W3: sms_events    │  │  for staff view  │   │
-│  │  • Low-score follow  │  │  W4: edge_cases    │  │                  │   │
-│  │  • Staff alerts      │  │                    │  │  Auth: service   │   │
-│  │                      │  │  Email alerts via  │  │  account JSON    │   │
-│  │  Inbound:            │  │  SendGrid          │  │                  │   │
+│  │  NOTIFYRE SMS (D2)   │  │     KERAGON        │  │ GOOGLE CALENDAR  │   │
+│  │  (mock mode — D1)    │  │  4 Live Workflows  │  │ (service acct)   │   │
+│  │                      │  │                    │  │                  │   │
+│  │  Outbound:           │  │  W1: call_log      │  │  Write-only:     │   │
+│  │  • Follow-up SMS     │  │  W2: emergency     │  │  1-hour events   │   │
+│  │  • Day-before remind │  │  W3: sms_events    │  │  for staff view  │   │
+│  │  • 1-hr reminder     │  │  W4: edge_cases    │  │                  │   │
+│  │  • Low-score follow  │  │                    │  │  Auth: service   │   │
+│  │  • Staff alerts      │  │  Email alerts via  │  │  account JSON    │   │
+│  │                      │  │  SendGrid          │  │                  │   │
+│  │  Inbound:            │  │                    │  │                  │   │
 │  │  • Rating replies    │  │                    │  │                  │   │
 │  │  • CANCEL keyword    │  │                    │  │                  │   │
 │  └──────────────────────┘  └───────────────────┘  └──────────────────┘   │
@@ -100,21 +103,36 @@
 ```
 1.  Caller dials RetellAI-managed phone number
 2.  RetellAI handles telephony + STT/TTS in real time
-3.  RetellAI agent captures:
-      • Name, phone, reason for visit (non-diagnostic)
+    Agent name: Grace. After-hours aware (never suggests "today").
+3.  RetellAI agent (Grace) captures:
+      • Name, phone, date of birth (DOB), reason for visit (non-diagnostic)
       • Patient type (new / returning)
       • Intended visit timeframe (1-hour window)
       • SMS consent (explicit opt-in question during call)
+    Note: visit timeframe captured via log_call_information.
+          schedule_soft_appointment is deactivated (placeholder URL removed).
 4.  RetellAI fires webhook → POST /webhook/retell (call_ended)
 5.  retellHandler.js:
       a. Runs spam detection (multi-factor score ≥ 3 = spam)
-      b. Runs validation / PHI scrubbing
+      b. Runs validation / PHI scrubbing (patientDob scrubbed before Keragon)
       c. Determines disposition (completed, dropped, spam, emergency)
-      d. Logs call record → Keragon W1 (call_log)
-      e. Creates Google Calendar 1-hr event (if timeframe captured)
-      f. Sends post-call SMS follow-up via SignalWire (consent-gated)
+      d. Logs call record → Keragon W1 (call_log) — DOB not included
+      e. Creates Google Calendar 1-hr event (if timeframe captured);
+         DOB included in event description for staff identity reference
+      f. Sends post-call SMS follow-up via Notifyre (Delivery 2; mock mode D1)
 6.  SMS follow-up includes confirmation + optional rating opt-in
 7.  schedulerService cron fires day-before + 1-hr-before SMS reminders
+```
+
+### DOB Capture Pipeline
+
+```
+1.  RetellAI captures patientDob in extracted_data during call
+2.  validateCallerInfo() in validation.js validates format
+3.  patient_dob included in in-memory callData for processing
+4.  scrubTranscriptForLogging() strips DOB before any Keragon write
+5.  Google Calendar event description includes DOB for staff reference
+    (event is write-only, visible to clinic staff with calendar access)
 ```
 
 ### 2. Emergency Detection Flow
@@ -299,9 +317,9 @@ All call data is logged to Keragon W1 with this structure:
 | Audit Trail | All calls logged with timestamps; PHI deletion logged in Keragon |
 | Field Sanitization | `sanitizeForLogging()` strips prohibited fields before any Keragon write |
 
-### Fields NEVER logged
+### Fields NEVER logged (to Keragon)
 - SSN / social security number
-- Date of birth
+- Date of birth — captured during call, written to Google Calendar event description only; scrubbed before any Keragon write
 - Medical history / diagnosis / treatment
 - Medications / prescriptions
 - Insurance ID / policy number
@@ -351,7 +369,7 @@ Restart the server — cron jobs will not start.
 
 The system is designed as a base model. To deploy for a second clinic:
 
-1. **Create new accounts** under the new client's name: RetellAI, SignalWire, Keragon, Google Workspace
+1. **Create new accounts** under the new client's name: RetellAI, Notifyre, Keragon, Google Workspace
 2. **Copy `.env.example`** → fill in new clinic credentials (all are env-var driven, no code changes needed)
 3. **Update clinic-specific vars:**
    ```
@@ -360,7 +378,7 @@ The system is designed as a base model. To deploy for a second clinic:
 4. **Create 4 new Keragon workflows** (copy W1–W4 structure, update webhook URLs in `.env`)
 5. **Set up new Google Calendar** → share with new service account
 6. **Configure RetellAI agent** → update clinic name, hours, greeting in prompt
-7. **Assign SignalWire phone number** → point inbound webhook to new server instance
+7. **Configure Notifyre SMS number** → point inbound webhook to new server instance (Delivery 2)
 
 No code changes required for standard clinic deployments.
 
@@ -378,7 +396,7 @@ No code changes required for standard clinic deployments.
 | `/webhook/retell` | POST | RetellAI call events |
 | `/webhook/retell/status` | POST | Call status updates |
 | `/webhook/sms/inbound` | POST | Inbound SMS replies (ratings, opt-outs, CANCEL keyword) |
-| `/webhook/sms/status` | POST | SignalWire SMS delivery status callbacks |
+| `/webhook/sms/status` | POST | SMS delivery status callbacks (Notifyre — Delivery 2) |
 | `/webhook/keragon/callback` | POST | Keragon automation callbacks |
 
 ---
