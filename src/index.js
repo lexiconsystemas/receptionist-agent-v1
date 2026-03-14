@@ -158,6 +158,24 @@ app.post('/webhook/retell', retellHandler.handleWebhook);
 // Webhook for call status updates
 app.post('/webhook/retell/status', retellHandler.handleCallStatus);
 
+// RetellAI custom function call handler — log_call_information
+// Grace calls this at the end of every call (Step 10) to push collected data.
+// Responds 200 immediately so Grace is never blocked; the actual structured
+// logging is already handled downstream by the call_ended + call_analyzed webhooks.
+app.post('/webhook/retell/function/log-call-information', (req, res) => {
+  try {
+    logger.info('log_call_information function called', {
+      callId: req.body?.call_id || req.body?.callId || 'unknown',
+      args: req.body?.args ? Object.keys(req.body.args) : []
+    });
+    // Respond immediately so Grace is not blocked awaiting this
+    res.json({ success: true });
+  } catch (error) {
+    logger.error('log_call_information function handler error', { error: error.message });
+    res.json({ success: false });
+  }
+});
+
 // ===========================================
 // SMS WEBHOOK ENDPOINTS
 // NOTE: RetellAI handles all telephony AND outbound SMS.
