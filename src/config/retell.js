@@ -157,18 +157,26 @@ async function listCalls(options = {}) {
  * @returns {Object} Parsed call data
  */
 function parseCallEvent(event) {
+  // RetellAI v2 webhook nests call data under event.call; fall back to flat
+  // structure for backwards-compat with tests / legacy payloads.
+  const call = event.call || event;
   return {
-    callId: event.call_id,
-    agentId: event.agent_id,
-    eventType: event.event_type,
-    timestamp: event.timestamp || new Date().toISOString(),
-    callStatus: event.call_status,
-    endReason: event.end_reason,
-    duration: event.duration_seconds,
-    transcript: event.transcript,
-    metadata: event.metadata || {},
-    // Extract structured data from the conversation
-    extractedData: event.extracted_data || {}
+    callId: call.call_id,
+    agentId: call.agent_id,
+    eventType: event.event || event.event_type || call.event_type,
+    timestamp: call.start_timestamp
+      ? new Date(call.start_timestamp).toISOString()
+      : (event.timestamp || new Date().toISOString()),
+    callStatus: call.status || call.call_status,
+    endReason: call.disconnection_reason || call.end_reason,
+    duration: call.duration_ms
+      ? Math.round(call.duration_ms / 1000)
+      : (call.duration_seconds || 0),
+    transcript: call.transcript,
+    metadata: call.metadata || {},
+    // Post-call extraction lives in call_analysis.custom_analysis_data (v2)
+    // or flat extracted_data (legacy / test payloads)
+    extractedData: call.call_analysis?.custom_analysis_data || call.extracted_data || {}
   };
 }
 
@@ -182,16 +190,51 @@ function detectEmergency(callData) {
   const emergencyKeywords = [
     'chest pain', 'chest pressure',
     'can\'t breathe', 'difficulty breathing', 'shortness of breath',
+    'gasping for air', 'can\'t catch my breath', 'unable to breathe',
+    'can\'t speak', 'can\'t talk', 'can\'t talk in full sentences',
+    'choking', 'choking on', 'airway', 'airway blocked',
+    'stridor',
     'stroke', 'facial drooping', 'slurred speech', 'arm weakness',
+    'can\'t speak', 'unable to speak', 'cannot speak',
+    'can\'t walk', 'unable to walk',
+    'sudden confusion', 'confused', 'disoriented',
+    'worst headache of my life', 'severe headache',
+    'vision loss', 'double vision',
+    'numbness on one side', 'tingling on one side',
+    'personality change',
     'severe bleeding', 'uncontrolled bleeding', 'bleeding won\'t stop', 'can\'t stop bleeding',
+    'vomiting blood', 'throwing up blood',
+    'coughing up blood',
+    'blood in stool', 'black stool', 'tarry stool',
+    'blood in urine',
+    'bleeding during pregnancy',
     'unconscious', 'passed out', 'fainted', 'loss of consciousness',
     'seizure', 'convulsion',
     'head injury', 'hit my head',
+    'electric shock', 'electrocuted',
+    'carbon monoxide',
+    'chemical burn', 'chemical burns', 'toxic inhalation',
     'allergic reaction', 'throat swelling', 'anaphylaxis',
     'blue lips', 'not breathing',
+    'turning blue',
     'car accident', 'vehicle accident', 'crash',
+    'high-speed accident', 'high speed accident',
+    'crush injury', 'crush injuries',
+    'broken bone sticking out',
+    'can\'t move my limb', 'cannot move my limb',
+    'severe neck pain', 'severe back pain', 'spinal',
     'burn', 'burned', 'on fire',
     'overdose', 'poisoning', 'swallowed',
+    'not urinating', 'not peeing',
+    'stiff neck',
+    'skin turning purple', 'mottled skin',
+    'severe swelling', 'swelling of face', 'swelling of neck',
+    'heart is racing', 'heart racing', 'irregular heartbeat',
+    'rapid heartbeat', 'slow heartbeat',
+    'dizzy and faint', 'lightheaded and faint',
+    'leg swelling and shortness of breath',
+    'severe abdominal pain',
+    'severe chest pain',
     'suicide', 'kill myself', 'self-harm', 'hurt myself', 'end my life'
   ];
 
@@ -210,7 +253,18 @@ function detectEmergency(callData) {
     'thinking about hurting myself', 'want to hurt myself', 'thinking of hurting myself'
   ].some(keyword => combinedText.includes(keyword));
 
-  const isEmergency = detectedKeywords.length > 0 || mentalHealthCrisis;
+  // Soft-language high-distress triggers (treat as emergency redirect)
+  const softDistress = [
+    'i think i\'m dying',
+    'i think i am dying',
+    'i can\'t stay awake',
+    'something is very wrong',
+    'i feel like passing out',
+    'i might pass out',
+    'i can\'t breathe properly'
+  ].some(keyword => combinedText.includes(keyword));
+
+  const isEmergency = detectedKeywords.length > 0 || mentalHealthCrisis || softDistress;
 
   return {
     isEmergency,

@@ -40,11 +40,12 @@ async function handleWebhook(req, res) {
     }
 
     const event = req.body;
-    const eventType = event.event_type || event.type;
+    // RetellAI v2 sends event type in `event.event`; support legacy `event_type` / `type` too
+    const eventType = event.event || event.event_type || event.type;
 
     logger.info('RetellAI webhook received', {
       eventType,
-      callId: event.call_id
+      callId: event.call?.call_id || event.call_id
     });
 
     // Route to appropriate handler
@@ -137,7 +138,7 @@ async function handleCallEnded(event) {
   const callLog = {
     call_id: callData.callId,
     timestamp: callData.timestamp,
-    caller_id: callerInfo.phoneNumber || event.caller_number,
+    caller_id: callerInfo.phoneNumber || event.call?.from_number || event.caller_number,
     call_duration_seconds: callData.duration,
     caller_name: callerInfo.callerName,
     patient_type: callerInfo.patientType,
@@ -147,6 +148,7 @@ async function handleCallEnded(event) {
     appointment_type: callerInfo.appointmentType || null,
     callback_requested: callerInfo.callbackRequested || false,
     sms_consent_explicit: callerInfo.smsConsent,
+    feedback_consent: callerInfo.feedbackConsent,
     // PHI — used for Google Calendar only; scrubbed before any Keragon log
     patient_dob: callerInfo.patientDob || null,
     disposition,
