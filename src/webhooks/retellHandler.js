@@ -59,7 +59,12 @@ async function handleWebhook(req, res) {
         break;
 
       case 'call_analyzed':
-        await handleCallAnalyzed(event);
+        // Respond to RetellAI immediately — processing takes longer than the
+        // 5-second webhook timeout. Calendar creation and Keragon logging
+        // continue in the background after the 200 is sent.
+        handleCallAnalyzed(event).catch(err =>
+          logger.error('handleCallAnalyzed background error', { error: err.message })
+        );
         break;
 
       case 'transcript_update':
@@ -309,6 +314,13 @@ async function handleCallEnded(event) {
 
 /**
  * Handle call analyzed event (post-call analysis)
+ * NOTE: This handler is intentionally fire-and-forget (not awaited in the switch).
+ * RetellAI's 5-second webhook timeout is too short for Keragon + Google Calendar I/O.
+ * The 200 response is sent immediately; processing continues in the background.
+ *
+ * Google Calendar creation lives HERE (not in handleCallEnded) because
+ * call_analysis.custom_analysis_data (extractedData) is only populated in this event.
+ * In call_ended the extraction fields are always null.
  */
 async function handleCallAnalyzed(event) {
   const callData = retellConfig.parseCallEvent(event);
@@ -318,13 +330,58 @@ async function handleCallAnalyzed(event) {
     hasTranscript: !!callData.transcript
   });
 
+  // Extract validated caller info from post-call analysis data
+  const callerInfo = validation.validateCallerInfo(callData.extractedData);
+  const emergencyCheck = retellConfig.detectEmergency(callData);
+  const spamCheck = spamDetection.analyzeCall(callData);
+
+  // ── Google Calendar: create appointment event ──────────────────────────────
+  // Only fires when a visit timeframe was captured and the call wasn't an
+  // emergency or spam. Creates a staff-reference block in the clinic calendar.
+  if (
+    callerInfo.visitTimeframe &&
+    !emergencyCheck.isEmergency &&
+    !spamCheck.isSpam &&
+    googleCalendarService.isConfigured()
+  ) {
+    try {
+      const callLogForCalendar = {
+        call_id: callData.callId,
+        caller_name: callerInfo.callerName,
+        reason_for_visit: callerInfo.reasonForVisit,
+        intended_visit_timeframe: callerInfo.visitTimeframe,
+        patient_dob: callerInfo.patientDob || null,
+        caller_id: event.call?.from_number || null,
+        disposition: 'completed',
+        spam_flag: false,
+        emergency_trigger: false
+      };
+      const gcalResult = await googleCalendarService.createAppointmentEvent(callLogForCalendar);
+      if (gcalResult.success) {
+        logger.info('Google Calendar event created', {
+          callId: callData.callId,
+          eventId: gcalResult.eventId
+        });
+      } else {
+        logger.warn('Google Calendar event not created', {
+          callId: callData.callId,
+          reason: gcalResult.error
+        });
+      }
+    } catch (err) {
+      logger.error('Google Calendar create threw in handleCallAnalyzed', {
+        callId: callData.callId,
+        error: err.message
+      });
+    }
+  }
+
   // Log analysis to Keragon for staff review
   await callLogger.logToKeragon({
     event: 'call_analyzed',
     callId: callData.callId,
-    analysis: event.analysis || {},
-    sentiment: event.sentiment,
-    summary: event.summary
+    analysis: event.call?.call_analysis || {},
+    sentiment: callData.extractedData?.userSentiment
   });
 }
 
