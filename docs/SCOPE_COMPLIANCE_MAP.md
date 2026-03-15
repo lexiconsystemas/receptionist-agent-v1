@@ -104,7 +104,7 @@
 |------------|----------------|-----------------|--------|
 | Ask when patient plans to come in | Step 5/6 of call flow captures intended visit timeframe | RetellAI prompt → `log_call_information` function | ✅ |
 | Try to get caller to confirm 1-hour timeframe | Grace asks for specific hour window; logs broader timeframe if unavailable | RetellAI prompt → scheduling step | ✅ |
-| Book 1-hour timeframes in Google Calendar | Event created with startTime + 1 hour duration | `src/services/googleCalendarService.js` → `createAppointmentEvent()` | ⚠️ Implemented; pending Arthur's Google Calendar env vars |
+| Book 1-hour timeframes in Google Calendar | Event created with startTime + 1 hour duration | `src/services/googleCalendarService.js` → `createAppointmentEvent()` | ✅ Confirmed working — live test passed 2026-03-14 |
 | Log timeframe even if only broad (e.g., "tomorrow morning") | `parseVisitStart()` falls back gracefully; freeform timeframe logged as-is | `googleCalendarService.js` → `parseVisitStart()` | ✅ |
 | Appointment change/cancel flow | Detected via `appointmentIntent` field; cancels Redis reminder, logs to W4, alerts staff via SMS | `retellHandler.js` → change/cancel branch | ✅ |
 
@@ -193,7 +193,7 @@
 | Keragon: spam detection flags | `spam_flag`, `spam_reasons[]` in W1 payload | `callLogger.js` → `logCallRecord()` | ✅ |
 | Keragon: SMS sent and delivery status | W3 `sms_sent` + `sms_status_update` events | `callLogger.js` → `logSmsStatus()` → W3 | ✅ |
 | Keragon: error notifications / automation failures | W4 `edge_case` events for failed SMS, dropped calls, incomplete info | `callLogger.js` → `logEdgeCase()` → W4 | ✅ |
-| Google Calendar: soft scheduling reference | Creates 1-hour block for each completed call with visit timeframe; staff-reference only | `src/services/googleCalendarService.js` → `createAppointmentEvent()` | ⚠️ Pending Arthur's Google Calendar env vars |
+| Google Calendar: soft scheduling reference | Creates 1-hour block for each completed call with visit timeframe; staff-reference only | `src/services/googleCalendarService.js` → `createAppointmentEvent()` | ✅ Confirmed working — live test passed 2026-03-14 |
 | All integrations documented | ARCHITECTURE.md, API_SPECIFICATION.md, DEPLOYMENT_GUIDE.md, OPERATIONS_MANUAL.md, COMPLIANCE_GUIDE.md, ACCESS_MAP.md | `docs/` | ✅ |
 
 ---
@@ -354,7 +354,7 @@ Documented in `src/utils/spamDetection.js` → `getSpamRules()` (machine-readabl
 | Multi-call handling | RetellAI handles natively; documented in `docs/ARCHITECTURE.md` | ✅ |
 | Emergency routing | 22-test simulation suite; emergency tests pass | ✅ |
 | Spam call detection | `scripts/test-mock-flow.js` | ✅ |
-| Google Calendar event creation | `scripts/test-calendar.js` | ⚠️ Pending Arthur's env vars |
+| Google Calendar event creation | `scripts/test-calendar.js` | ✅ Live test passed 2026-03-14 |
 | SMS delivery | `scripts/test-sms.js` | ⚠️ Pending Notifyre (Delivery 2) |
 | Dropped calls | Handled via `disposition: "dropped"` + W4 edge case | ✅ |
 | Incomplete info | `disposition: "incomplete"` + W4 edge case | ✅ |

@@ -214,8 +214,7 @@ npm test                           # unit tests
 
 **Arthur:**
 - [ ] Fill Railway env vars (`RETELL_API_KEY`, `CLINIC_NAME`, `STAFF_ALERT_PHONE`, etc.)
-- [ ] Share Google Calendar with `GOOGLE_SERVICE_ACCOUNT_EMAIL` → "Make changes to events"
-- [ ] Add `GOOGLE_CALENDAR_ID` / `GOOGLE_SERVICE_ACCOUNT_EMAIL` / `GOOGLE_PRIVATE_KEY` to Railway
+- [x] Share Google Calendar with service account + provide `GOOGLE_CALENDAR_ID` / `GOOGLE_SERVICE_ACCOUNT_EMAIL` / `GOOGLE_PRIVATE_KEY` — ✅ confirmed working (live calendar test passed 2026-03-14)
 - [ ] Add SendGrid API key into Keragon W1/W3/W4 email steps
 
 **Simone or Arthur:**
