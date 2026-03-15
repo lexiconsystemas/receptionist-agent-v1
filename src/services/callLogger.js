@@ -293,6 +293,7 @@ function sanitizeForLogging(data) {
     'date_of_birth',
     'dob',
     'birth_date',
+    'patient_dob',
     'medical_history',
     'diagnosis',
     'treatment',
