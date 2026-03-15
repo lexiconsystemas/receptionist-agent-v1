@@ -71,15 +71,30 @@ npm test                           # unit tests
 
 ## Docs
 
+**For the client:**
+
 | File | What it covers |
 |------|---------------|
+| [CLIENT_GUIDE.md](./CLIENT_GUIDE.md) | Non-technical user guide — how Grace works, Keragon/Calendar walkthrough, future client onboarding |
+| [ARTHUR_SETUP_CHECKLIST.md](./ARTHUR_SETUP_CHECKLIST.md) | What Arthur needs to do before go-live |
+
+**For the demo:**
+
+| File | What it covers |
+|------|---------------|
+| [LOOM_SCRIPT.md](./LOOM_SCRIPT.md) | Scene-by-scene Loom recording script with demo call cheat sheet |
+
+**For the build:**
+
+| File | What it covers |
+|------|---------------|
+| [SCOPE_COMPLIANCE_MAP.md](./SCOPE_COMPLIANCE_MAP.md) | Every scope requirement → implementation file, status, exact Keragon payloads |
+| [KNOWN_LIMITATIONS.md](./KNOWN_LIMITATIONS.md) | Root-cause analysis of all 3 edge cases — 2 resolved, 1 fixed |
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | System diagram, data flow, component map |
 | [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) | Railway setup, env vars, going live |
 | [OPERATIONS_MANUAL.md](./OPERATIONS_MANUAL.md) | How to update Grace, turn system off, troubleshoot |
 | [COMPLIANCE_GUIDE.md](./COMPLIANCE_GUIDE.md) | HIPAA-conscious design, PHI handling, data retention |
 | [ACCESS_MAP.md](./ACCESS_MAP.md) | All systems, accounts, API keys, permission levels |
-| [ARTHUR_SETUP_CHECKLIST.md](./ARTHUR_SETUP_CHECKLIST.md) | What Arthur needs to do before go-live |
-| [SCOPE_COMPLIANCE_MAP.md](./SCOPE_COMPLIANCE_MAP.md) | Every scope requirement → implementation status |
 
 ---
 
@@ -177,16 +192,21 @@ npm test                           # unit tests
 - [x] Access map (§6 requirement) — `ACCESS_MAP.md`
 - [x] Client setup checklist — `ARTHUR_SETUP_CHECKLIST.md`
 - [x] Scope compliance map — `SCOPE_COMPLIANCE_MAP.md`
+- [x] Client user guide (non-technical) — `CLIENT_GUIDE.md`
+- [x] Known limitations analysis — `KNOWN_LIMITATIONS.md`
+- [x] Loom demo script — `LOOM_SCRIPT.md`
 
 ---
 
-## Known Limitations (Accepted)
+## Known Limitations
 
-| # | Issue | Notes |
-|---|-------|-------|
-| 1 | Ambiguous bleeding ("my arm is bleeding a lot") may skip location question | Soft-trigger keyword list can override BLEEDING LOCATION EXCEPTION |
-| 2 | Unresponsive mid-triage may not re-engage in simulation | Simulation limitation; live call behavior expected correct |
-| 3 | Caller volunteers name+reason upfront → Grace may skip SMS opt-in | Rare edge; implied consent still applies |
+| # | Issue | Status |
+|---|-------|--------|
+| 1 | Ambiguous bleeding ("my arm is bleeding a lot") may skip location question | ✅ Resolved — 4-layer prompt protection + hard-coded worked example |
+| 2 | Unresponsive mid-triage may not re-engage in simulation | ✅ Simulation artifact only — confirmed working in live calls |
+| 3 | Caller volunteers info upfront → Grace may skip SMS opt-in | ✅ Fixed 2026-03-14 — mandatory consent rule added, pushed live |
+
+> Full root-cause analysis → [`KNOWN_LIMITATIONS.md`](./KNOWN_LIMITATIONS.md)
 
 ---
 
@@ -208,4 +228,4 @@ npm test                           # unit tests
 
 ---
 
-*Last updated: 2026-03-14*
+*Last updated: 2026-03-14 — all 3 known limitations resolved*
