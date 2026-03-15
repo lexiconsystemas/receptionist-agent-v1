@@ -103,7 +103,8 @@ async function sendFollowUp(callData) {
   } catch (_) { /* fallback to en */ }
 
   // Generate appropriate message based on call context
-  const message = generateFollowUpMessage(callData, locale);
+  // Default to true if missing/undefined (backwards compatible)
+  const message = generateFollowUpMessage(callData, locale, callData.feedback_consent);
 
   try {
     // Optional delay before sending
@@ -152,7 +153,7 @@ async function sendFollowUp(callData) {
  * @param {string} [locale='en'] - 'en' or 'es'
  * @returns {string} SMS message
  */
-function generateFollowUpMessage(callData, locale = 'en') {
+function generateFollowUpMessage(callData, locale = 'en', feedbackConsent = true) {
   const clinicName = process.env.CLINIC_NAME || 'our urgent care';
   const clinicAddress = process.env.CLINIC_ADDRESS || '';
   const es = locale === 'es';
@@ -168,9 +169,17 @@ function generateFollowUpMessage(callData, locale = 'en') {
       : ` We're located at ${clinicAddress}.`;
   }
 
-  message += es
-    ? ' Aceptamos pacientes sin cita. ¿Cómo fue su experiencia? Responda del 1 al 5. Puede simplemente responder STOP para dejar de recibir mensajes.'
-    : ' Walk-ins welcome — no appointment needed. How was your experience? Reply 1-5. You can simply reply STOP to stop receiving messages.';
+  // Scope §3.4 / §Initial Rating SMS: exact required wording for the feedback question.
+  // Only include if the caller opted in (feedbackConsent !== false).
+  if (feedbackConsent !== false) {
+    message += es
+      ? ' En una escala del 1 al 5, ¿qué tan fácil fue programar su cita hoy? Por favor, NO incluya ningún detalle médico. Responda STOP para cancelar mensajes.'
+      : ' On a scale of 1–5, how easy was it to schedule your appointment today? Please do NOT include any medical details. Reply STOP to opt out.';
+  } else {
+    message += es
+      ? ' Responda STOP para cancelar mensajes.'
+      : ' Reply STOP to opt out.';
+  }
 
   // Keep message under SMS limit (160 chars for single segment)
   if (message.length > 160) {
@@ -182,13 +191,18 @@ function generateFollowUpMessage(callData, locale = 'en') {
       ? (es ? ` ${clinicAddress}.` : ` ${clinicAddress}.`)
       : '';
     const shortSuffix = es
-      ? ' Sin cita. Califíquenos del 1 al 5. Responda STOP para darse de baja.'
-      : ' Walk-ins welcome. Rate us 1-5. Reply STOP to stop messages.';
+      ? ' Escala 1 al 5: ¿qué tan fácil fue programar su cita hoy? Sin detalles médicos. STOP para cancelar.'
+      : ' Scale 1-5: how easy was scheduling today? No medical details. STOP to opt out.';
     const shortWithAddr = shortBase + shortAddr + shortSuffix;
 
     message = shortWithAddr.length <= 160
       ? shortWithAddr
       : shortBase + shortSuffix; // drop address only if still over limit
+
+    // Final guardrail: enforce 160 chars (drop address already handled above)
+    if (message.length > 160) {
+      message = message.slice(0, 157) + '...';
+    }
   }
 
   return message;

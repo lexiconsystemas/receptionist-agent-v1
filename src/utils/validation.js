@@ -90,6 +90,11 @@ function validateCallerInfo(data) {
     ? data.smsConsent
     : (data.sms_consent === true || data.sms_consent === 'true' || null);
 
+  // Explicit feedback consent captured during call
+  result.feedbackConsent = typeof data.feedbackConsent === 'boolean'
+    ? data.feedbackConsent
+    : (typeof data.feedback_consent === 'boolean' ? data.feedback_consent : null);
+
   // Whether caller explicitly requested a callback
   result.callbackRequested = !!(
     data.callbackRequested || data.callback_requested || data.callback

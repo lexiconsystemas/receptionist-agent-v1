@@ -130,13 +130,13 @@ describe('smsService — generateFollowUpMessage', () => {
   test('generates English message with clinic name', () => {
     const msg = generateFollowUpMessage(makeCallData(), 'en');
     expect(msg).toContain(CLINIC);
-    expect(msg.toLowerCase()).toContain('walk-ins');
+    expect(msg.toLowerCase()).toMatch(/on a scale|scale 1-5/);
   });
 
   test('generates Spanish message with clinic name', () => {
     const msg = generateFollowUpMessage(makeCallData(), 'es');
     expect(msg).toContain(CLINIC);
-    expect(msg.toLowerCase()).toMatch(/pacientes|cita/);
+    expect(msg.toLowerCase()).toMatch(/cita/);
   });
 
   test('does not include caller name (PHI-free design)', () => {
@@ -160,8 +160,8 @@ describe('smsService — generateFollowUpMessage', () => {
 
   test('includes rating request and opt-out', () => {
     const msg = generateFollowUpMessage(makeCallData(), 'en');
-    expect(msg).toContain('Reply STOP');
-    expect(msg.toLowerCase()).toMatch(/rate|reply 1/i);
+    expect(msg.toLowerCase()).toMatch(/reply stop|stop to opt out/);
+    expect(msg).toMatch(/On a scale of 1–5|Scale 1-5/);
   });
 
   test('keeps message under 160 chars when all env vars set', () => {

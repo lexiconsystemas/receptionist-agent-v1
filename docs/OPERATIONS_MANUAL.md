@@ -80,6 +80,50 @@ Once the server is running and credentials are configured, the following are ful
 
 ---
 
+## Feedback (Rating SMS) — Storage, Alerts, and Disable Procedure
+
+This section satisfies Exhibit A (STEP 2) documentation requirements.
+
+### Where feedback responses are stored
+
+- **Numeric ratings (1–5):** Logged to Keragon **W3** as event `patient_rating` with fields:
+  - `rating` (number)
+  - `phone_number`
+  - `timestamp`
+  - `low_score_alert` (boolean)
+  - `requires_review` (boolean)
+- **Free-text feedback replies:** Stored short-term in Redis under:
+  - `sms:freetext:{smsSid}`
+  - TTL: `PHI_RETENTION_DAYS` (default 7 days)
+
+After TTL expiry, the raw free-text body is no longer present in Redis. Keragon receives only a sentinel reference containing the Redis key and expiry timestamp (no raw message body).
+
+### How low-score alerts are delivered to the clinic
+
+When a patient submits a rating of **3 or lower**:
+
+1. The server logs `patient_rating` to Keragon W3 with:
+   - `low_score_alert: true`
+   - `requires_review: true`
+2. The server sends the required follow-up SMS to the patient.
+3. Keragon W3 can trigger a staff email alert via its SendGrid email step.
+
+> Arthur must add the SendGrid API key inside the Keragon W3 email step for staff email alerts to work.
+
+### How to disable the follow-up system
+
+To disable **all** outbound SMS (including feedback/rating and reminders):
+
+```env
+SMS_ENABLED=false
+```
+
+Restart the server.
+
+To disable only the low-score follow-up while leaving other SMS enabled: redeploy with the low-score follow-up block removed from `src/webhooks/inboundSmsHandler.js`.
+
+---
+
 ## Standard Operating Procedures
 
 ### SOP-001: System Startup

@@ -180,22 +180,22 @@ async function handleRating(phoneNumber, score, rawBody) {
   // Send acknowledgement — personalise message based on score
   const locale = await getLocaleForNumber(phoneNumber);
 
-  let replyMessage;
+  // Scope §3.4: No message sent for scores 4 or 5.
+  // Low scores (1–3) trigger exact follow-up wording per scope §STEP2.
   if (isLowScore) {
-    replyMessage = locale === 'es'
-      ? `Gracias por su opinión. Lamentamos que su experiencia no haya sido buena. Un miembro de nuestro equipo se pondrá en contacto con usted. — ${process.env.CLINIC_NAME || 'Nuestra clínica'}`
-      : `Thank you for your feedback. We're sorry your experience wasn't great — a team member will follow up with you. — ${process.env.CLINIC_NAME || 'Our clinic'}`;
-  } else {
-    replyMessage = locale === 'es'
-      ? `¡Gracias por su calificación! Nos alegra que haya tenido una buena experiencia. — ${process.env.CLINIC_NAME || 'Nuestra clínica'}`
-      : `Thanks for rating us! We're glad you had a good experience. — ${process.env.CLINIC_NAME || 'Our clinic'}`;
-  }
+    const replyMessage = locale === 'es'
+      ? 'Lo sentimos mucho. ¿Podría decirnos qué salió mal con la experiencia de programación? Por favor, no incluya ningún detalle médico.'
+      : "We're sorry to hear that. Could you tell us what went wrong with the scheduling experience? Please do not include any medical details.";
 
-  try {
-    await smsService.sendRaw(phoneNumber, replyMessage);
-    logger.info('Rating acknowledgement sent', { phoneNumber, score, isLowScore });
-  } catch (error) {
-    logger.error('Failed to send rating acknowledgement', { phoneNumber, error: error.message });
+    try {
+      await smsService.sendRaw(phoneNumber, replyMessage);
+      logger.info('Low-score follow-up SMS sent', { phoneNumber, score });
+    } catch (error) {
+      logger.error('Failed to send low-score follow-up SMS', { phoneNumber, error: error.message });
+    }
+  } else {
+    // Scores 4–5: no reply per scope requirement
+    logger.info('High score received — no reply SMS sent per scope', { phoneNumber, score });
   }
 }
 
