@@ -21,6 +21,7 @@ const inboundSmsHandler = require('./webhooks/inboundSmsHandler');
 const healthCheck = require('./lib/healthCheck');
 const { registry: circuitBreakerRegistry } = require('./lib/circuitBreaker');
 const { startScheduler, stopScheduler } = require('./services/schedulerService');
+const googleCalendarService = require('./services/googleCalendarService');
 const mocks = require('../mocks');
 
 const app = express();
@@ -178,19 +179,64 @@ app.post('/webhook/retell/status', retellHandler.handleCallStatus);
 
 // RetellAI custom function call handler — log_call_information
 // Grace calls this at the end of every call (Step 10) to push collected data.
-// Responds 200 immediately so Grace is never blocked; the actual structured
-// logging is already handled downstream by the call_ended + call_analyzed webhooks.
-app.post('/webhook/retell/function/log-call-information', (req, res) => {
+// Responds 200 immediately so Grace is never blocked, then creates the Google
+// Calendar event asynchronously from the args Grace provides.
+app.post('/webhook/retell/function/log-call-information', async (req, res) => {
   try {
+    const callId = req.body?.call_id || req.body?.callId || 'unknown';
+    const args = req.body?.args || {};
+
     logger.info('log_call_information function called', {
-      callId: req.body?.call_id || req.body?.callId || 'unknown',
-      args: req.body?.args ? Object.keys(req.body.args) : []
+      callId,
+      args: Object.keys(args),
+      visitTimeframe: args.intended_visit_timeframe || null
     });
-    // Respond immediately so Grace is not blocked awaiting this
+
+    // Respond immediately so Grace is never blocked
     res.json({ success: true });
+
+    // ── Google Calendar: create appointment event from Grace's captured data ──
+    // This is the primary calendar creation path. The call_ended/call_analyzed
+    // paths depend on custom_analysis_data which may be empty; Grace's explicit
+    // log_call_information args are the most reliable source of visitTimeframe.
+    if (args.intended_visit_timeframe && googleCalendarService.isConfigured()) {
+      try {
+        const callLogForCalendar = {
+          call_id: callId,
+          caller_name: args.caller_name || null,
+          reason_for_visit: args.reason_for_visit || null,
+          intended_visit_timeframe: args.intended_visit_timeframe,
+          patient_dob: null, // DOB not in log_call_information schema — PHI handled separately
+          caller_id: args.phone_number || null,
+          disposition: args.disposition || 'completed',
+          spam_flag: false,
+          emergency_trigger: false
+        };
+        const gcalResult = await googleCalendarService.createAppointmentEvent(callLogForCalendar);
+        if (gcalResult.success) {
+          logger.info('Google Calendar event created from log_call_information', {
+            callId,
+            eventId: gcalResult.eventId,
+            visitTimeframe: args.intended_visit_timeframe
+          });
+        } else {
+          logger.warn('Google Calendar event not created from log_call_information', {
+            callId,
+            reason: gcalResult.error
+          });
+        }
+      } catch (err) {
+        logger.error('Google Calendar create failed in log_call_information handler', {
+          callId,
+          error: err.message
+        });
+      }
+    }
   } catch (error) {
     logger.error('log_call_information function handler error', { error: error.message });
-    res.json({ success: false });
+    if (!res.headersSent) {
+      res.json({ success: false });
+    }
   }
 });
 
