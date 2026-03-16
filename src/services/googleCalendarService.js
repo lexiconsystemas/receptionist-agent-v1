@@ -135,7 +135,14 @@ function parseVisitStart(timeframe, timestamp) {
     let dayOffset = null;
     if (/\btomorrow\b/.test(lower))               dayOffset = 1;
     else if (/\btonight\b|\btoday\b/.test(lower)) dayOffset = 0;
+    else if (/in\s+a\s+couple\s+(of\s+)?days?/.test(lower)) dayOffset = 2;
+    else if (/in\s+a\s+few\s+days?/.test(lower))            dayOffset = 3;
     else {
+      // "in X days" e.g. "in 3 days"
+      const inDaysMatch = lower.match(/in\s+(\d+)\s+days?/);
+      if (inDaysMatch) dayOffset = parseInt(inDaysMatch[1]);
+    }
+    if (dayOffset === null) {
       const days = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
       for (let i = 0; i < days.length; i++) {
         if (lower.includes(days[i])) {
@@ -156,7 +163,9 @@ function parseVisitStart(timeframe, timestamp) {
         minute = parseInt(timeMatch[2] || '0');
         if (timeMatch[3].toLowerCase() === 'pm' && hour < 12) hour += 12;
         if (timeMatch[3].toLowerCase() === 'am' && hour === 12) hour = 0;
-      } else if (/\bmorning\b/.test(lower))                    { hour = 9;  minute = 0; }
+      } else if (/\bnoon\b/.test(lower))                        { hour = 12; minute = 0; }
+        else if (/\bmidnight\b/.test(lower))                   { hour = 0;  minute = 0; }
+        else if (/\bmorning\b/.test(lower))                    { hour = 9;  minute = 0; }
         else if (/\bafternoon\b/.test(lower))                  { hour = 14; minute = 0; }
         else if (/\bevening\b|\bnight\b|tonight/.test(lower))  { hour = 19; minute = 0; }
         else                                                   { hour = 9;  minute = 0; } // default 9am
