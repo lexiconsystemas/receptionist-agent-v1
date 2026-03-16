@@ -145,17 +145,21 @@ app.post('/webhook/retell/begin-call', (req, res) => {
       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: tz
     }); // e.g. "Monday, March 16, 2026"
     const current_day = now.toLocaleDateString('en-US', { weekday: 'long', timeZone: tz }); // e.g. "Monday"
+    const current_time = now.toLocaleTimeString('en-US', {
+      hour: 'numeric', minute: '2-digit', hour12: true, timeZone: tz
+    }); // e.g. "10:30 PM"
     const tomorrow_date = new Date(now);
     tomorrow_date.setDate(tomorrow_date.getDate() + 1);
     const tomorrow = tomorrow_date.toLocaleDateString('en-US', {
       weekday: 'long', month: 'long', day: 'numeric', timeZone: tz
     }); // e.g. "Tuesday, March 17"
-    logger.info('Begin-call webhook fired', { fromNumber, current_date });
+    logger.info('Begin-call webhook fired', { fromNumber, current_date, current_time });
     res.json({
       dynamic_variables: {
         caller_phone_number: fromNumber || '',
         current_date,
         current_day,
+        current_time,
         tomorrow
       }
     });
