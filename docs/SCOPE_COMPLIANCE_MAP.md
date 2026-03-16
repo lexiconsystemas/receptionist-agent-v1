@@ -2,8 +2,8 @@
 
 **Project:** After-Hours AI Receptionist – Urgent Care MVP
 **Client:** Arthur Garnett | **Contractor:** Simone Lawson
-**Last Updated:** 2026-03-14
-**Overall Status:** ~90% complete — Delivery 1 ready
+**Last Updated:** 2026-03-16
+**Overall Status:** ~95% complete — Delivery 1 ready
 
 ---
 
@@ -420,13 +420,25 @@ Documented in `src/utils/spamDetection.js` → `getSpamRules()` (machine-readabl
 
 ## Pending Items Before Go-Live (Arthur + Simone)
 
+### ✅ Confirmed Complete (as of 2026-03-16)
+
+| Item | Confirmed |
+|------|-----------|
+| Railway: `RETELL_API_KEY` set | ✅ 2026-03-15 |
+| Railway: `RETELL_WEBHOOK_SECRET` set | ✅ 2026-03-15 |
+| Railway: `GOOGLE_CALENDAR_ID`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_PRIVATE_KEY` set | ✅ 2026-03-15 — live test passed |
+| Railway: All 4 Keragon webhook URLs set | ✅ 2026-03-15 |
+| RetellAI: Pause Before Speaking → 1.0s | ✅ 2026-03-15 |
+| Keragon W2 `receptionist_emergency_alert`: Gmail notification step configured | ✅ 2026-03-16 — SendGrid replaced with Gmail |
+| Keragon W1/W3/W4: Gmail notification steps configured + tested | ✅ 2026-03-16 — emails confirmed delivering |
+
+### 🔲 Still Pending
+
 | Item | Owner | Blocking |
 |------|-------|---------|
-| Fill Railway env vars: `RETELL_API_KEY`, `RETELL_WEBHOOK_SECRET`, `CLINIC_NAME`, `STAFF_ALERT_PHONE`, `CLINIC_ADDRESS`, `CLINIC_TIMEZONE`, `CLINIC_HOURS` | Arthur | Production calls |
-| Share Google Calendar with service account email → "Make changes to events" permission | Arthur | Google Calendar event creation |
-| Provide `GOOGLE_CALENDAR_ID`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_PRIVATE_KEY` in Railway | Arthur | Google Calendar event creation |
-| Add SendGrid API key into Keragon W1/W3/W4 email notification steps | Arthur | Email alerts from Keragon |
-| Set `{{CLINIC_NAME}}` and `{{CLINIC_HOURS}}` variables in RetellAI prompt | Simone or Arthur | Greeting accuracy |
-| Pause Before Speaking 1.0s → RetellAI dashboard → Speech Settings → Welcome Message | Simone or Arthur | First-word cutoff fix |
-| End-to-end live test call after all env vars set | Simone | Delivery sign-off |
+| Railway: `CLINIC_NAME` | Arthur | Greeting + Calendar event title |
+| Railway: `STAFF_ALERT_PHONE` | Arthur | Staff SMS alerts on appointment change/cancel |
+| Railway: `CLINIC_ADDRESS`, `CLINIC_TIMEZONE`, `CLINIC_HOURS` | Arthur | SMS content + scheduling accuracy |
+| RetellAI prompt: set `{{CLINIC_NAME}}` and `{{CLINIC_HOURS}}` variables | Simone or Arthur | Greeting accuracy |
+| End-to-end live test call after Arthur's env vars set | Simone | Delivery sign-off |
 | Mandatory walkthrough session | Both | Acceptance Criteria §10.5 |

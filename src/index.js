@@ -139,10 +139,24 @@ app.get('/health/mocks', (req, res) => {
 app.post('/webhook/retell/begin-call', (req, res) => {
   try {
     const fromNumber = req.body?.call?.from_number || req.body?.from_number || null;
-    logger.info('Begin-call webhook fired', { fromNumber });
+    const tz = process.env.CLINIC_TIMEZONE || 'America/New_York';
+    const now = new Date();
+    const current_date = now.toLocaleDateString('en-US', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: tz
+    }); // e.g. "Monday, March 16, 2026"
+    const current_day = now.toLocaleDateString('en-US', { weekday: 'long', timeZone: tz }); // e.g. "Monday"
+    const tomorrow_date = new Date(now);
+    tomorrow_date.setDate(tomorrow_date.getDate() + 1);
+    const tomorrow = tomorrow_date.toLocaleDateString('en-US', {
+      weekday: 'long', month: 'long', day: 'numeric', timeZone: tz
+    }); // e.g. "Tuesday, March 17"
+    logger.info('Begin-call webhook fired', { fromNumber, current_date });
     res.json({
       dynamic_variables: {
-        caller_phone_number: fromNumber || ''
+        caller_phone_number: fromNumber || '',
+        current_date,
+        current_day,
+        tomorrow
       }
     });
   } catch (error) {
