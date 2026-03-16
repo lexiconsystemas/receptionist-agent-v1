@@ -139,7 +139,15 @@ app.get('/health/mocks', (req, res) => {
 // This populates {{caller_phone_number}} so the agent can proactively confirm it.
 app.post('/webhook/retell/begin-call', (req, res) => {
   try {
-    const fromNumber = req.body?.call?.from_number || req.body?.from_number || null;
+    // Log full body once to identify exact field RetellAI uses for caller number
+    logger.info('Begin-call raw body keys', { bodyKeys: Object.keys(req.body || {}), body: JSON.stringify(req.body).slice(0, 500) });
+    const fromNumber = req.body?.call?.from_number
+      || req.body?.from_number
+      || req.body?.caller_number
+      || req.body?.caller_id
+      || req.body?.from
+      || req.body?.call?.caller_number
+      || null;
     const tz = process.env.CLINIC_TIMEZONE || 'America/New_York';
     const now = new Date();
     const current_date = now.toLocaleDateString('en-US', {
