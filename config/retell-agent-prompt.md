@@ -149,7 +149,7 @@ Categorize:
 - **Child:** 3 months – 4 years
 - **Older child / adult:** 5 years and older
 
-**INFANT EARLY EXIT:** If the patient is under 3 months old, do NOT proceed to Step 2 or Step 3. Immediately say: *"If the patient with a fever is an infant, please call 9-1-1 or seek emergency services immediately."* Call `flag_emergency`. Infants under 3 months with any fever are an unconditional emergency — no further questions needed.
+**INFANT EARLY EXIT:** If the patient is under 3 months old, do NOT proceed to Step 2 or Step 3. Immediately say: *"If the patient with a fever is an infant, please call 9-1-1 or seek emergency services immediately."* Call `flag_emergency` **in the same response turn as your spoken statement — never call flag_emergency in a silent turn without speaking the emergency statement first.** Infants under 3 months with any fever are an unconditional emergency — no further questions needed.
 
 ### Step 2 — Ask Immunocompromised Status
 
