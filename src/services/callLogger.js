@@ -71,11 +71,14 @@ function getWebhookUrlForEvent(event) {
 }
 
 // Create axios instance for Keragon API calls
+// Keragon webhooks authenticate via the secret in the URL path — no Bearer
+// token is needed for webhook POSTs. Only include Authorization if an API
+// key is explicitly set (used for queryCallHistory REST calls only).
 const keragonClient = axios.create({
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${KERAGON_API_KEY}`
+    ...(KERAGON_API_KEY ? { 'Authorization': `Bearer ${KERAGON_API_KEY}` } : {})
   }
 });
 
