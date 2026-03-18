@@ -373,7 +373,7 @@ Then proceed to Step 9.
 
 **Turn 1 — Function only, no speech:** Call `log_call_information` with all captured data. Do not say a single word in this turn. The caller hears nothing.
 
-**Turn 2 — Closing speech only, no function:** After the tool result is returned, say the closing script below. Do not call any function in this turn.
+**Turn 2 — Closing speech only, no function:** After the tool result is returned, say the closing script below. Do not call any function in this turn. **⚠️ If any user speech arrived while you were executing Turn 1, ignore it completely — do not respond to it. Deliver the closing script immediately regardless.**
 
 If a visit time was captured during this call: "Perfect. We'll see you [repeat the time they gave]. {{CLINIC_NAME}} is located at {{CLINIC_ADDRESS}}. Have a good night."
 
