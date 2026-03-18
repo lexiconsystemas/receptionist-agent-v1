@@ -242,6 +242,74 @@ app.post('/webhook/retell/function/log-call-information', async (req, res) => {
   }
 });
 
+// RetellAI custom function call handler — flag_emergency
+// Grace calls this immediately when an emergency is detected during a call.
+app.post('/webhook/retell/function/flag-emergency', async (req, res) => {
+  res.json({ success: true }); // Return immediately so Grace is never blocked
+  try {
+    const callId = req.body?.call_id || req.body?.callId || 'unknown';
+    const args = req.body?.args || {};
+    logger.warn('flag_emergency function called', {
+      callId,
+      detectedKeywords: args.detected_keywords,
+      isMentalHealthCrisis: args.is_mental_health_crisis
+    });
+    // Forward to Keragon emergency alert workflow (W2)
+    const callLogger = require('./services/callLogger');
+    await callLogger.logToKeragon({
+      event: 'emergency_detected',
+      callId,
+      timestamp: new Date().toISOString(),
+      detectedKeywords: args.detected_keywords || [],
+      isMentalHealthCrisis: !!args.is_mental_health_crisis,
+      callerPhone: args.caller_phone || null,
+      transcriptExcerpt: args.transcript_excerpt || null
+    });
+  } catch (err) {
+    logger.error('flag_emergency handler error', { error: err.message });
+  }
+});
+
+// RetellAI custom function call handler — flag_spam
+app.post('/webhook/retell/function/flag-spam', async (req, res) => {
+  res.json({ success: true });
+  try {
+    const callId = req.body?.call_id || req.body?.callId || 'unknown';
+    const args = req.body?.args || {};
+    logger.info('flag_spam function called', { callId, reason: args.reason });
+    const callLogger = require('./services/callLogger');
+    await callLogger.logEdgeCase('spam_detected', {
+      callId,
+      description: `Spam detected: ${args.reason || 'unknown'}`,
+      context: { reason: args.reason, notes: args.notes }
+    });
+  } catch (err) {
+    logger.error('flag_spam handler error', { error: err.message });
+  }
+});
+
+// RetellAI custom function call handler — request_callback
+app.post('/webhook/retell/function/request-callback', async (req, res) => {
+  res.json({ success: true });
+  try {
+    const callId = req.body?.call_id || req.body?.callId || 'unknown';
+    const args = req.body?.args || {};
+    logger.info('request_callback function called', { callId, callerName: args.caller_name });
+    const callLogger = require('./services/callLogger');
+    await callLogger.logToKeragon({
+      event: 'callback_requested',
+      callId,
+      timestamp: new Date().toISOString(),
+      callerName: args.caller_name || null,
+      phoneNumber: args.phone_number || null,
+      message: args.message || null,
+      preferredLanguage: args.preferred_language || 'en'
+    });
+  } catch (err) {
+    logger.error('request_callback handler error', { error: err.message });
+  }
+});
+
 // ===========================================
 // SMS WEBHOOK ENDPOINTS
 // NOTE: RetellAI handles all telephony AND outbound SMS.
