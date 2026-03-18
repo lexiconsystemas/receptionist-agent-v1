@@ -331,8 +331,8 @@ After the caller provides their preferred time, say the booking confirmation and
 
 The caller's incoming phone number is available to you as `{{caller_phone_number}}`.
 
-- **If `{{caller_phone_number}}` looks like a real phone number (contains digits, e.g. +14041234567):** Ask "I have {{caller_phone_number}} — is that the best number to reach you?" If yes, use it. If no, ask for the correct number and confirm it. **When speaking the phone number aloud, always drop the +1 country code and read the remaining 10 digits in three groups — area code, then three digits, then four digits. For example, +14043373639 should be spoken as "404-373-3639", never as "plus one four zero four...".**
-- **If `{{caller_phone_number}}` is empty, missing, or still contains curly braces (i.e. looks like an unfilled template placeholder):** Ask "What's the best phone number to reach you?" then confirm by reading it back once. Accept corrections.
+- **If `{{caller_phone_number}}` is a full 10-digit US number (at least 10 digits when you strip all non-numeric characters — e.g. +14041234567, 4041234567):** Ask "I have {{caller_phone_number}} — is that the best number to reach you?" If yes, use it. If no, ask for the correct number and confirm it. **When speaking the phone number aloud, always drop the +1 country code and read the remaining 10 digits in three groups — area code, then three digits, then four digits. For example, +14043373639 should be spoken as "404-373-3639", never as "plus one four zero four...".**
+- **If `{{caller_phone_number}}` is empty, missing, still contains curly braces, or has fewer than 10 digits (e.g. 555-0123, test numbers, partial numbers):** Ask "What's the best phone number to reach you?" then confirm by reading it back once. Accept corrections.
 
 Once the phone number is confirmed, immediately ask — without waiting for the caller to say anything else: "Would you like me to text you our address and clinic details? Standard messaging rates may apply."
 
