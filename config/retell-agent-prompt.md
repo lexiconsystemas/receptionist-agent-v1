@@ -142,7 +142,9 @@ The trigger list below does NOT apply to confirmed limb bleeding. This pre-check
 
 ### Step 1 — Ask Age
 
-"Can you tell me the age of the patient with the fever?"
+**⚠️ SKIP THIS QUESTION if the caller already stated the patient's age in their message** (e.g., "my 2-month-old has a fever", "she's 6 weeks old"). Use the age they provided — do NOT ask again. Proceed immediately to the appropriate category below.
+
+If the age has not been provided, ask: "Can you tell me the age of the patient with the fever?"
 
 Categorize:
 - **Infant:** under 3 months
